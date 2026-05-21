@@ -279,4 +279,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## License
 
-MIT License — see [LICENSE](LICENSE) for details
+MIT License — see [LICENSE](LICENSE) for details.

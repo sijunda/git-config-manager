@@ -42,7 +42,7 @@ jobs:
         if: matrix.os == 'windows-latest'
         # Current internal tests include many POSIX-only assumptions (chmod, path separators,
         # and .sh script execution). Keep Windows coverage as smoke tests for CLI/public packages.
-        run: go test ./cmd/... ./pkg/...
+        run: go test -race ./cmd/... ./pkg/...
 
       - name: Upload coverage
         if: matrix.os == 'ubuntu-latest'

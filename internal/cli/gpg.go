@@ -25,6 +25,7 @@ func newGPGCmd() *cobra.Command {
 	cmd.AddCommand(newGPGListCmd())
 	cmd.AddCommand(newGPGSignCmd())
 	cmd.AddCommand(newGPGTestCmd())
+	cmd.AddCommand(newGPGUploadCmd())
 
 	return cmd
 }
@@ -75,26 +76,35 @@ func newGPGGenerateCmd() *cobra.Command {
 
 			// Auto-upload GPG key to GitHub if token is available
 			if token, err := ctr.GitHubClient.LoadToken(profileName); err == nil && token != "" {
-				ui.Blank()
-				upload, askErr := ui.AskConfirm("Upload GPG key to GitHub automatically?", true)
-				if askErr == nil && upload {
-					sp2 := ui.NewSpinner("Uploading GPG key to GitHub...")
-					sp2.Start()
+				ctr.GitHubClient.SetToken(token)
+				ctx := context.Background()
 
-					armoredKey, exportErr := ctr.GPGManager.GetPublicKey(keyInfo.KeyID)
-					if exportErr != nil {
-						sp2.StopError("Failed to export GPG public key")
-						ui.Warning("Could not export key: %v", exportErr)
-					} else {
-						ctr.GitHubClient.SetToken(token)
-						if uploadErr := ctr.GitHubClient.UploadGPGKey(context.Background(), armoredKey); uploadErr != nil {
-							sp2.StopError("Failed to upload GPG key")
-							ui.Warning("Upload failed: %v", uploadErr)
-							ui.Print("  You can upload manually at: https://github.com/settings/keys")
+				// Check if key already exists
+				exists, checkErr := ctr.GitHubClient.GPGKeyExists(ctx, keyInfo.KeyID)
+				if checkErr == nil && exists {
+					ui.Blank()
+					ui.Info("GPG key already exists on GitHub — skipping upload.")
+				} else {
+					ui.Blank()
+					upload, askErr := ui.AskConfirm("Upload GPG key to GitHub automatically?", true)
+					if askErr == nil && upload {
+						sp2 := ui.NewSpinner("Uploading GPG key to GitHub...")
+						sp2.Start()
+
+						armoredKey, exportErr := ctr.GPGManager.GetPublicKey(keyInfo.KeyID)
+						if exportErr != nil {
+							sp2.StopError("Failed to export GPG public key")
+							ui.Warning("Could not export key: %v", exportErr)
 						} else {
-							sp2.Stop("GPG key uploaded to GitHub!")
-							ctr.AuditLogger.Log(audit.ActionGPGGenerate, profileName,
-								map[string]string{"key_id": keyInfo.KeyID, "uploaded": "true"}, nil)
+							if uploadErr := ctr.GitHubClient.UploadGPGKey(ctx, armoredKey); uploadErr != nil {
+								sp2.StopError("Failed to upload GPG key")
+								ui.Warning("Upload failed: %v", uploadErr)
+								ui.Print("  You can upload manually at: https://github.com/settings/keys")
+							} else {
+								sp2.Stop("GPG key uploaded to GitHub!")
+								ctr.AuditLogger.Log(audit.ActionGPGGenerate, profileName,
+									map[string]string{"key_id": keyInfo.KeyID, "uploaded": "true"}, nil)
+							}
 						}
 					}
 				}
@@ -228,4 +238,91 @@ func newGPGTestCmd() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+func newGPGUploadCmd() *cobra.Command {
+	var force bool
+
+	cmd := &cobra.Command{
+		Use:   "upload <profile>",
+		Short: "Upload GPG key to GitHub",
+		Long: `Upload the profile's GPG public key to GitHub for commit verification.
+
+Checks for duplicates before uploading. Use --force to skip the check.
+
+Examples:
+  gcm gpg upload work
+  gcm gpg upload work --force`,
+		Args: requireArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			profileName := args[0]
+
+			p, err := ctr.ProfileManager.Get(profileName)
+			if err != nil {
+				ui.Error("profile %q not found", profileName)
+				return nil
+			}
+			if p.GPG == nil || p.GPG.KeyID == "" {
+				ui.Error("profile %q has no GPG key configured", profileName)
+				ui.Blank()
+				ui.Print("  To generate one: gcm gpg generate %s", profileName)
+				return nil
+			}
+
+			token, err := ctr.GitHubClient.LoadToken(profileName)
+			if err != nil || token == "" {
+				ui.Error("No GitHub token found for profile %q", profileName)
+				ui.Blank()
+				ui.Print("  Login first: gcm github login %s", profileName)
+				return nil
+			}
+
+			ctr.GitHubClient.SetToken(token)
+			ctx := context.Background()
+
+			// Check for duplicates
+			if !force {
+				sp := ui.NewSpinner("Checking if GPG key already exists on GitHub...")
+				sp.Start()
+
+				exists, checkErr := ctr.GitHubClient.GPGKeyExists(ctx, p.GPG.KeyID)
+				if checkErr != nil {
+					sp.StopError("Could not check existing keys")
+					ui.Warning("Check failed: %v", checkErr)
+					ui.Print("  Use --force to skip the duplicate check")
+					return nil
+				}
+				if exists {
+					sp.Stop("GPG key already exists on GitHub")
+					ui.Info("This GPG key is already uploaded — no action needed.")
+					return nil
+				}
+				sp.Stop("Key not found on GitHub — uploading")
+			}
+
+			armoredKey, exportErr := ctr.GPGManager.GetPublicKey(p.GPG.KeyID)
+			if exportErr != nil {
+				ui.Error("Could not export GPG public key: %v", exportErr)
+				return nil
+			}
+
+			sp2 := ui.NewSpinner("Uploading GPG key to GitHub...")
+			sp2.Start()
+
+			if uploadErr := ctr.GitHubClient.UploadGPGKey(ctx, armoredKey); uploadErr != nil {
+				sp2.StopError("Failed to upload GPG key")
+				ui.Warning("Upload failed: %v", uploadErr)
+				ui.Print("  You can upload manually at: https://github.com/settings/keys")
+				return nil
+			}
+
+			sp2.Stop("GPG key uploaded to GitHub!")
+			ctr.AuditLogger.Log(audit.ActionGPGGenerate, profileName,
+				map[string]string{"action": "upload", "key_id": p.GPG.KeyID, "uploaded": "true"}, nil)
+			return nil
+		},
+	}
+
+	cmd.Flags().BoolVarP(&force, "force", "f", false, "Skip duplicate check")
+	return cmd
 }

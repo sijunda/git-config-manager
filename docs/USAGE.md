@@ -383,6 +383,7 @@ gcm ssh generate work -p "correct-horse"   # passphrase (encrypted at rest)
 gcm ssh list             # keys across all profiles
 gcm ssh test work        # ssh -T git@github.com using the profile's key
 gcm ssh copy work        # copy public key to clipboard
+gcm ssh upload work      # upload key to GitHub (duplicate-safe)
 ```
 
 Keys are generated with Go's native crypto (no subprocess, no passphrase leaking into argv). Private keys are written `0600`, public keys `0644`. If a passphrase is provided, the private key is encrypted at rest using OpenSSH native format (bcrypt-KDF + AES-256-CTR); the passphrase itself is not stored anywhere.
@@ -678,10 +679,12 @@ Activation
 
 SSH
   gcm ssh generate <name> [-t] [-b] [-c] [-p]
+  gcm ssh upload <name> [--force]
   gcm ssh list | test <name> | copy <name>
 
 GPG
   gcm gpg generate <name>
+  gcm gpg upload <name> [--force]
   gcm gpg list
   gcm gpg sign enable|disable <name>
   gcm gpg test <name>

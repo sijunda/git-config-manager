@@ -1982,3 +1982,177 @@ func TestPollForToken_InternalTimeout(t *testing.T) {
 		t.Errorf("error = %q, want 'authorization timed out'", err)
 	}
 }
+
+// --- Tests for ListGPGKeys, SSHKeyExists, GPGKeyExists, normalizeSSHKey ---
+
+func TestListGPGKeys_Success(t *testing.T) {
+	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/user/gpg_keys" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode([]GPGKeyResponse{
+			{ID: 1, KeyID: "ABC123"},
+			{ID: 2, KeyID: "DEF456"},
+		})
+	})
+	c.SetToken("test-token")
+
+	keys, err := c.ListGPGKeys(context.Background())
+	if err != nil {
+		t.Fatalf("ListGPGKeys: %v", err)
+	}
+	if len(keys) != 2 {
+		t.Fatalf("got %d keys, want 2", len(keys))
+	}
+	if keys[0].KeyID != "ABC123" {
+		t.Errorf("keys[0].KeyID = %q, want ABC123", keys[0].KeyID)
+	}
+}
+
+func TestListGPGKeys_Error(t *testing.T) {
+	c := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("server error"))
+	})
+	c.SetToken("test-token")
+
+	_, err := c.ListGPGKeys(context.Background())
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestListGPGKeys_Empty(t *testing.T) {
+	c := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode([]GPGKeyResponse{})
+	})
+	c.SetToken("test-token")
+
+	keys, err := c.ListGPGKeys(context.Background())
+	if err != nil {
+		t.Fatalf("ListGPGKeys: %v", err)
+	}
+	if len(keys) != 0 {
+		t.Fatalf("got %d keys, want 0", len(keys))
+	}
+}
+
+func TestSSHKeyExists_Found(t *testing.T) {
+	c := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode([]SSHKeyResponse{
+			{ID: 1, Key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA test@host", Title: "my-key"},
+		})
+	})
+	c.SetToken("test-token")
+
+	exists, err := c.SSHKeyExists(context.Background(), "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA comment-ignored")
+	if err != nil {
+		t.Fatalf("SSHKeyExists: %v", err)
+	}
+	if !exists {
+		t.Error("expected key to exist")
+	}
+}
+
+func TestSSHKeyExists_NotFound(t *testing.T) {
+	c := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode([]SSHKeyResponse{
+			{ID: 1, Key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5BBBB other@host", Title: "other-key"},
+		})
+	})
+	c.SetToken("test-token")
+
+	exists, err := c.SSHKeyExists(context.Background(), "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA my-key")
+	if err != nil {
+		t.Fatalf("SSHKeyExists: %v", err)
+	}
+	if exists {
+		t.Error("expected key to NOT exist")
+	}
+}
+
+func TestSSHKeyExists_APIError(t *testing.T) {
+	c := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte("bad credentials"))
+	})
+	c.SetToken("test-token")
+
+	_, err := c.SSHKeyExists(context.Background(), "ssh-ed25519 AAAA")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestGPGKeyExists_Found(t *testing.T) {
+	c := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode([]GPGKeyResponse{
+			{ID: 1, KeyID: "ABC123DEF456"},
+		})
+	})
+	c.SetToken("test-token")
+
+	exists, err := c.GPGKeyExists(context.Background(), "abc123def456") // case-insensitive
+	if err != nil {
+		t.Fatalf("GPGKeyExists: %v", err)
+	}
+	if !exists {
+		t.Error("expected key to exist (case-insensitive match)")
+	}
+}
+
+func TestGPGKeyExists_NotFound(t *testing.T) {
+	c := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode([]GPGKeyResponse{
+			{ID: 1, KeyID: "OTHER999"},
+		})
+	})
+	c.SetToken("test-token")
+
+	exists, err := c.GPGKeyExists(context.Background(), "ABC123")
+	if err != nil {
+		t.Fatalf("GPGKeyExists: %v", err)
+	}
+	if exists {
+		t.Error("expected key to NOT exist")
+	}
+}
+
+func TestGPGKeyExists_APIError(t *testing.T) {
+	c := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		w.Write([]byte("forbidden"))
+	})
+	c.SetToken("test-token")
+
+	_, err := c.GPGKeyExists(context.Background(), "ABC123")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestNormalizeSSHKey(t *testing.T) {
+	cases := []struct {
+		input string
+		want  string
+	}{
+		{"ssh-ed25519 AAAAC3Nz user@host", "ssh-ed25519 AAAAC3Nz"},
+		{"ssh-rsa AAAAB3NzaC1yc2E comment with spaces", "ssh-rsa AAAAB3NzaC1yc2E"},
+		{"ssh-ed25519 AAAAC3Nz", "ssh-ed25519 AAAAC3Nz"},
+		{"  ssh-ed25519 AAAAC3Nz  ", "ssh-ed25519 AAAAC3Nz"},
+		{"onlyone", "onlyone"},
+		{"", ""},
+	}
+	for _, tc := range cases {
+		got := normalizeSSHKey(tc.input)
+		if got != tc.want {
+			t.Errorf("normalizeSSHKey(%q) = %q, want %q", tc.input, got, tc.want)
+		}
+	}
+}

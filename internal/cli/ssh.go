@@ -25,6 +25,7 @@ func newSSHCmd() *cobra.Command {
 	cmd.AddCommand(newSSHListCmd())
 	cmd.AddCommand(newSSHTestCmd())
 	cmd.AddCommand(newSSHCopyCmd())
+	cmd.AddCommand(newSSHUploadCmd())
 
 	return cmd
 }
@@ -105,22 +106,31 @@ Examples:
 
 			// Auto-upload SSH key to GitHub if token is available
 			if token, err := ctr.GitHubClient.LoadToken(profileName); err == nil && token != "" {
-				ui.Blank()
-				upload, askErr := ui.AskConfirm("Upload SSH key to GitHub automatically?", true)
-				if askErr == nil && upload {
-					sp2 := ui.NewSpinner("Uploading SSH key to GitHub...")
-					sp2.Start()
+				ctr.GitHubClient.SetToken(token)
+				ctx := context.Background()
 
-					title := fmt.Sprintf("gcm-%s-%s", profileName, keyInfo.Type)
-					ctr.GitHubClient.SetToken(token)
-					if uploadErr := ctr.GitHubClient.UploadSSHKey(context.Background(), title, keyInfo.PublicKey); uploadErr != nil {
-						sp2.StopError("Failed to upload SSH key")
-						ui.Warning("Upload failed: %v", uploadErr)
-						ui.Print("  You can upload manually at: https://github.com/settings/keys")
-					} else {
-						sp2.Stop("SSH key uploaded to GitHub!")
-						ctr.AuditLogger.Log(audit.ActionSSHGenerate, profileName,
-							map[string]string{"type": keyInfo.Type, "path": keyInfo.Path, "uploaded": "true"}, nil)
+				// Check if key already exists
+				exists, checkErr := ctr.GitHubClient.SSHKeyExists(ctx, keyInfo.PublicKey)
+				if checkErr == nil && exists {
+					ui.Blank()
+					ui.Info("SSH key already exists on GitHub — skipping upload.")
+				} else {
+					ui.Blank()
+					upload, askErr := ui.AskConfirm("Upload SSH key to GitHub automatically?", true)
+					if askErr == nil && upload {
+						sp2 := ui.NewSpinner("Uploading SSH key to GitHub...")
+						sp2.Start()
+
+						title := fmt.Sprintf("gcm-%s-%s", profileName, keyInfo.Type)
+						if uploadErr := ctr.GitHubClient.UploadSSHKey(ctx, title, keyInfo.PublicKey); uploadErr != nil {
+							sp2.StopError("Failed to upload SSH key")
+							ui.Warning("Upload failed: %v", uploadErr)
+							ui.Print("  You can upload manually at: https://github.com/settings/keys")
+						} else {
+							sp2.Stop("SSH key uploaded to GitHub!")
+							ctr.AuditLogger.Log(audit.ActionSSHGenerate, profileName,
+								map[string]string{"type": keyInfo.Type, "path": keyInfo.Path, "uploaded": "true"}, nil)
+						}
 					}
 				}
 			}
@@ -235,4 +245,91 @@ func newSSHCopyCmd() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+func newSSHUploadCmd() *cobra.Command {
+	var force bool
+
+	cmd := &cobra.Command{
+		Use:   "upload <profile>",
+		Short: "Upload SSH key to GitHub",
+		Long: `Upload the profile's SSH public key to GitHub.
+
+Checks for duplicates before uploading. Use --force to skip the check.
+
+Examples:
+  gcm ssh upload work
+  gcm ssh upload work --force`,
+		Args: requireArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			profileName := args[0]
+
+			p, err := ctr.ProfileManager.Get(profileName)
+			if err != nil {
+				ui.Error("profile %q not found", profileName)
+				return nil
+			}
+			if p.SSH == nil || p.SSH.KeyPath == "" {
+				ui.Error("profile %q has no SSH key configured", profileName)
+				ui.Blank()
+				ui.Print("  To generate one: gcm ssh generate %s", profileName)
+				return nil
+			}
+
+			token, err := ctr.GitHubClient.LoadToken(profileName)
+			if err != nil || token == "" {
+				ui.Error("No GitHub token found for profile %q", profileName)
+				ui.Blank()
+				ui.Print("  Login first: gcm github login %s", profileName)
+				return nil
+			}
+
+			pubKey, err := ctr.SSHManager.GetPublicKey(p.SSH.KeyPath)
+			if err != nil {
+				return fmt.Errorf("could not read public key: %w", err)
+			}
+
+			ctr.GitHubClient.SetToken(token)
+			ctx := context.Background()
+
+			// Check for duplicates
+			if !force {
+				sp := ui.NewSpinner("Checking if key already exists on GitHub...")
+				sp.Start()
+
+				exists, checkErr := ctr.GitHubClient.SSHKeyExists(ctx, pubKey)
+				if checkErr != nil {
+					sp.StopError("Could not check existing keys")
+					ui.Warning("Check failed: %v", checkErr)
+					ui.Print("  Use --force to skip the duplicate check")
+					return nil
+				}
+				if exists {
+					sp.Stop("Key already exists on GitHub")
+					ui.Info("This SSH key is already uploaded — no action needed.")
+					return nil
+				}
+				sp.Stop("Key not found on GitHub — uploading")
+			}
+
+			sp2 := ui.NewSpinner("Uploading SSH key to GitHub...")
+			sp2.Start()
+
+			title := fmt.Sprintf("gcm-%s-%s", profileName, p.SSH.KeyType)
+			if uploadErr := ctr.GitHubClient.UploadSSHKey(ctx, title, pubKey); uploadErr != nil {
+				sp2.StopError("Failed to upload SSH key")
+				ui.Warning("Upload failed: %v", uploadErr)
+				ui.Print("  You can upload manually at: https://github.com/settings/keys")
+				return nil
+			}
+
+			sp2.Stop("SSH key uploaded to GitHub!")
+			ctr.AuditLogger.Log(audit.ActionSSHGenerate, profileName,
+				map[string]string{"action": "upload", "uploaded": "true"}, nil)
+			return nil
+		},
+	}
+
+	cmd.Flags().BoolVarP(&force, "force", "f", false, "Skip duplicate check")
+	return cmd
 }

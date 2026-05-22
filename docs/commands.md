@@ -355,6 +355,25 @@ gcm ssh copy work
 gcm ssh copy work | pbcopy    # macOS: copy to clipboard
 ```
 
+### `gcm ssh upload <profile>`
+
+Upload the profile's SSH public key to GitHub. Checks for duplicates before uploading.
+
+```bash
+gcm ssh upload work
+gcm ssh upload work --force    # skip duplicate check
+```
+
+| Flag      | Short | Default | Description            |
+| --------- | ----- | ------- | ---------------------- |
+| `--force` | `-f`  | `false` | Skip duplicate check   |
+
+**What it does:**
+1. Loads the stored GitHub token for the profile
+2. Lists existing SSH keys on GitHub and compares by key material
+3. If the key already exists, reports "already uploaded" and exits
+4. Otherwise, uploads with title `gcm-<profile>-<type>`
+
 ---
 
 ## `gcm gpg`
@@ -415,6 +434,25 @@ gcm gpg test work
 ```
 
 Performs a test signature using the profile's GPG key ID.
+
+### `gcm gpg upload <profile>`
+
+Upload the profile's GPG public key to GitHub for commit verification. Checks for duplicates before uploading.
+
+```bash
+gcm gpg upload work
+gcm gpg upload work --force    # skip duplicate check
+```
+
+| Flag      | Short | Default | Description            |
+| --------- | ----- | ------- | ---------------------- |
+| `--force` | `-f`  | `false` | Skip duplicate check   |
+
+**What it does:**
+1. Loads the stored GitHub token for the profile
+2. Lists existing GPG keys on GitHub and compares by key ID
+3. If the key already exists, reports "already uploaded" and exits
+4. Otherwise, exports the armored public key and uploads to GitHub
 
 ---
 
@@ -829,12 +867,14 @@ Activation
 
 SSH
   gcm ssh generate <name> [-t] [-b] [-c] [-p]  Generate key
+  gcm ssh upload <name> [--force]               Upload key to GitHub
   gcm ssh list                                  List all keys
   gcm ssh test <name>                           Test GitHub connection
   gcm ssh copy <name>                           Print public key
 
 GPG
   gcm gpg generate <name>                       Generate GPG key
+  gcm gpg upload <name> [--force]               Upload key to GitHub
   gcm gpg list                                  List GPG keys
   gcm gpg sign enable|disable <name>            Toggle signing
   gcm gpg test <name>                           Test signing

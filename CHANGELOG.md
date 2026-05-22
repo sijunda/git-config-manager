@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 ## [Unreleased]
 
 ### Added
+- **`gcm ssh upload` / `gcm gpg upload`** — Standalone commands to upload SSH/GPG keys to GitHub with automatic duplicate detection. Use `--force` to skip the check
+- **Auto-upload duplicate detection** — `gcm ssh generate` and `gcm gpg generate` now check if the key already exists on GitHub before offering to upload, preventing duplicates
 - **Built-in credential helper** — GCM registers itself as git's credential helper for github.com (`gcm credential-helper`). Git push/pull/clone reads tokens directly from GCM's encrypted store, bypassing the system keychain entirely. External credential store changes (VS Code logout, browser session clear, etc.) no longer break git authentication
 - **Git credential isolation** — `gcm use` now isolates git credentials per profile. When GCM is the credential helper, credentials are served dynamically from the encrypted store. In legacy mode (system keychain), it clears previous credentials and stores the new profile's token via `git credential approve/reject`, preventing credential bleed between profiles
 - **Credential username pinning** — sets `credential.https://github.com.username` in global git config so git only uses credentials matching the active profile

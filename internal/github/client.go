@@ -468,6 +468,61 @@ func (c *Client) ListSSHKeys(ctx context.Context) ([]SSHKeyResponse, error) {
 	return keys, nil
 }
 
+// GPGKeyResponse from the gpg_keys API.
+type GPGKeyResponse struct {
+	ID    int    `json:"id"`
+	KeyID string `json:"key_id"`
+	Email string `json:"primary_key_id"`
+}
+
+// ListGPGKeys returns the user's GPG keys from GitHub.
+func (c *Client) ListGPGKeys(ctx context.Context) ([]GPGKeyResponse, error) {
+	var keys []GPGKeyResponse
+	if err := c.apiGet(ctx, "/user/gpg_keys", &keys); err != nil {
+		return nil, err
+	}
+	return keys, nil
+}
+
+// SSHKeyExists checks if a public key is already uploaded to GitHub.
+// It compares the key material (type + base64 data), ignoring comments.
+func (c *Client) SSHKeyExists(ctx context.Context, publicKey string) (bool, error) {
+	keys, err := c.ListSSHKeys(ctx)
+	if err != nil {
+		return false, err
+	}
+	localKey := normalizeSSHKey(publicKey)
+	for _, k := range keys {
+		if normalizeSSHKey(k.Key) == localKey {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// GPGKeyExists checks if a GPG key ID is already uploaded to GitHub.
+func (c *Client) GPGKeyExists(ctx context.Context, keyID string) (bool, error) {
+	keys, err := c.ListGPGKeys(ctx)
+	if err != nil {
+		return false, err
+	}
+	for _, k := range keys {
+		if strings.EqualFold(k.KeyID, keyID) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// normalizeSSHKey extracts the key type and base64 data, stripping any trailing comment.
+func normalizeSSHKey(key string) string {
+	parts := strings.Fields(strings.TrimSpace(key))
+	if len(parts) >= 2 {
+		return parts[0] + " " + parts[1]
+	}
+	return strings.TrimSpace(key)
+}
+
 func (c *Client) apiGet(ctx context.Context, path string, result interface{}) error {
 	req, err := http.NewRequestWithContext(ctx, "GET", c.apiURL+path, nil)
 	if err != nil {

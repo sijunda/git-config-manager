@@ -121,6 +121,7 @@ gcm refresh                     # Re-evaluate current directory
 ### SSH Keys
 ```bash
 gcm ssh generate <profile>      # Generate SSH key (ed25519)
+gcm ssh upload <profile>        # Upload SSH key to GitHub (dedup-safe)
 gcm ssh list                    # List all SSH keys
 gcm ssh test <profile>          # Test GitHub SSH connection
 gcm ssh copy <profile>          # Show public key
@@ -129,6 +130,7 @@ gcm ssh copy <profile>          # Show public key
 ### GPG Signing
 ```bash
 gcm gpg generate <profile>      # Generate GPG key
+gcm gpg upload <profile>        # Upload GPG key to GitHub (dedup-safe)
 gcm gpg list                    # List GPG keys
 gcm gpg sign enable <profile>   # Enable commit signing
 gcm gpg sign disable <profile>  # Disable signing

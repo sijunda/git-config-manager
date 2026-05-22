@@ -353,35 +353,184 @@ func newProfileShowCmd() *cobra.Command {
 
 func newProfileEditCmd() *cobra.Command {
 	var (
-		name  string
-		email string
+		name        string
+		email       string
+		editor      string
+		signingKey  string
+		interactive bool
 	)
 	cmd := &cobra.Command{
-		Use: "edit <profile>", Short: "Edit a profile", Args: requireArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
-			p, err := ctr.ProfileManager.Get(args[0])
+		Use:   "edit <profile>",
+		Short: "Edit a profile",
+		Long: `Edit a Git profile's configuration.
+
+Without flags, opens an interactive editor showing current values.
+With flags, updates only the specified fields.
+
+Examples:
+  gcm profile edit work --interactive
+  gcm profile edit work --name "New Name" --email "new@email.com"
+  gcm profile edit work -e "updated@email.com"`,
+		Args: requireArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			profileName := args[0]
+			p, err := ctr.ProfileManager.Get(profileName)
 			if err != nil {
-				ui.Error("profile %q not found", args[0])
+				ui.Error("profile %q not found", profileName)
 				ui.Blank()
 				ui.Print("  To see available profiles: gcm profile list")
 				return nil
 			}
-			if name != "" {
+
+			// Determine if any flag was explicitly set
+			flagsSet := cmd.Flags().Changed("name") || cmd.Flags().Changed("email") ||
+				cmd.Flags().Changed("editor") || cmd.Flags().Changed("signing-key")
+
+			if !flagsSet || interactive {
+				return profileEditInteractive(p)
+			}
+
+			// Flag-based update
+			changed := false
+			if cmd.Flags().Changed("name") {
 				p.Git.User.Name = name
+				changed = true
 			}
-			if email != "" {
+			if cmd.Flags().Changed("email") {
 				p.Git.User.Email = email
+				changed = true
 			}
+			if cmd.Flags().Changed("editor") {
+				p.Git.Core.Editor = editor
+				changed = true
+			}
+			if cmd.Flags().Changed("signing-key") {
+				p.Git.User.SigningKey = signingKey
+				changed = true
+			}
+
+			if !changed {
+				ui.Info("No changes specified. Use --interactive for guided editing.")
+				return nil
+			}
+
 			if err := ctr.ProfileManager.Update(p); err != nil {
 				return err
 			}
-			ui.Success("Profile %q updated", args[0])
+			ctr.AuditLogger.Log(audit.ActionProfileUpdate, profileName, nil, nil)
+			ui.Success("Profile %q updated", profileName)
 			return nil
 		},
 	}
 	cmd.Flags().StringVarP(&name, "name", "n", "", "Update name")
 	cmd.Flags().StringVarP(&email, "email", "e", "", "Update email")
+	cmd.Flags().StringVar(&editor, "editor", "", "Update git editor")
+	cmd.Flags().StringVar(&signingKey, "signing-key", "", "Update signing key ID")
+	cmd.Flags().BoolVarP(&interactive, "interactive", "i", false, "Interactive edit mode")
 	return cmd
+}
+
+func profileEditInteractive(p *profile.Profile) error {
+	ui.Header("%s Edit Profile: %s", ui.IconProfile, p.Name)
+
+	ui.SubHeader("Basic Information")
+	newName, err := ui.AskString(fmt.Sprintf("Name [%s]:", p.Git.User.Name), p.Git.User.Name)
+	if err != nil {
+		return err
+	}
+	newEmail, err := ui.AskString(fmt.Sprintf("Email [%s]:", p.Git.User.Email), p.Git.User.Email)
+	if err != nil {
+		return err
+	}
+
+	editorDefault := p.Git.Core.Editor
+	editorPrompt := "Git editor (leave empty for default):"
+	if editorDefault != "" {
+		editorPrompt = fmt.Sprintf("Git editor [%s]:", editorDefault)
+	}
+	newEditor, err := ui.AskString(editorPrompt, editorDefault)
+	if err != nil {
+		return err
+	}
+
+	ui.SubHeader("Signing Configuration")
+	signingKeyDefault := p.Git.User.SigningKey
+	signingPrompt := "Signing key ID (leave empty to skip):"
+	if signingKeyDefault != "" {
+		signingPrompt = fmt.Sprintf("Signing key ID [%s]:", signingKeyDefault)
+	}
+	newSigningKey, err := ui.AskString(signingPrompt, signingKeyDefault)
+	if err != nil {
+		return err
+	}
+
+	gpgSignEnabled := p.Git.Commit.GPGSign != nil && *p.Git.Commit.GPGSign
+	newGPGSign, err := ui.AskConfirm("Enable commit signing?", gpgSignEnabled)
+	if err != nil {
+		return err
+	}
+
+	ui.SubHeader("GitHub Configuration")
+	ghUsername := ""
+	if p.GitHub != nil {
+		ghUsername = p.GitHub.Username
+	}
+	ghPrompt := "GitHub username (leave empty to skip):"
+	if ghUsername != "" {
+		ghPrompt = fmt.Sprintf("GitHub username [%s]:", ghUsername)
+	}
+	newGHUser, err := ui.AskString(ghPrompt, ghUsername)
+	if err != nil {
+		return err
+	}
+
+	// Apply changes
+	p.Git.User.Name = newName
+	p.Git.User.Email = newEmail
+	p.Git.Core.Editor = newEditor
+	p.Git.User.SigningKey = newSigningKey
+	p.Git.Commit.GPGSign = profile.BoolPtr(newGPGSign)
+
+	if newGHUser != "" {
+		if p.GitHub == nil {
+			p.GitHub = &profile.GitHubConfig{}
+		}
+		p.GitHub.Username = newGHUser
+	} else {
+		p.GitHub = nil
+	}
+
+	// Update GPG config key ID if signing key changed
+	if newSigningKey != "" {
+		if p.GPG == nil {
+			p.GPG = &profile.GPGConfig{}
+		}
+		p.GPG.KeyID = newSigningKey
+	}
+
+	if err := ctr.ProfileManager.Update(p); err != nil {
+		return err
+	}
+	ctr.AuditLogger.Log(audit.ActionProfileUpdate, p.Name, nil, nil)
+
+	ui.Blank()
+	ui.Success("Profile %q updated!", p.Name)
+	ui.Detail("Name", newName)
+	ui.Detail("Email", newEmail)
+	if newEditor != "" {
+		ui.Detail("Editor", newEditor)
+	}
+	if newSigningKey != "" {
+		ui.Detail("Signing Key", newSigningKey)
+	}
+	if newGPGSign {
+		ui.Detail("GPG Signing", "enabled")
+	}
+	if newGHUser != "" {
+		ui.Detail("GitHub", newGHUser)
+	}
+
+	return nil
 }
 
 func newProfileDeleteCmd() *cobra.Command {

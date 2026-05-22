@@ -21,6 +21,7 @@ type Action string
 
 const (
 	ActionProfileCreate   Action = "profile.create"
+	ActionProfileUpdate   Action = "profile.update"
 	ActionProfileDelete   Action = "profile.delete"
 	ActionProfileActivate Action = "profile.activate"
 	ActionSSHGenerate     Action = "ssh.generate"

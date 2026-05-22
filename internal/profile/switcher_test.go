@@ -256,12 +256,28 @@ func TestCurrent_GlobalDefault(t *testing.T) {
 }
 
 func TestRefresh_WithActiveProfile(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not found")
+	}
+
 	sw, mgr, cfg := newTestSwitcher(t)
 	mgr.Create(validProfile("refreshme"))
 	cfg.DefaultProfile = "refreshme"
 
+	// Isolate: use a temp git repo and temp global config
+	gitDir := t.TempDir()
+	cmd := exec.Command("git", "init", gitDir)
+	cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null")
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("git init: %v", err)
+	}
+	origDir, _ := os.Getwd()
+	os.Chdir(gitDir)
+	defer os.Chdir(origDir)
+	t.Setenv("GIT_CONFIG_GLOBAL", filepath.Join(t.TempDir(), "gitconfig"))
+
 	err := sw.Refresh()
-	// May error due to git not being initialized in temp dir, that's fine
+	// May fail due to config save, but exercises the code path
 	_ = err
 }
 
@@ -645,13 +661,29 @@ func TestCurrent_LocalProfileNotExist(t *testing.T) {
 }
 
 func TestRefresh_WithGlobalProfile(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not found")
+	}
+
 	sw, mgr, cfg := newTestSwitcher(t)
 	mgr.Create(validProfile("refreshglobal"))
 	cfg.DefaultProfile = "refreshglobal"
 
+	// Isolate: use a temp git repo and temp global config
+	gitDir := t.TempDir()
+	cmd := exec.Command("git", "init", gitDir)
+	cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null")
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("git init: %v", err)
+	}
+	origDir, _ := os.Getwd()
+	os.Chdir(gitDir)
+	defer os.Chdir(origDir)
+	t.Setenv("GIT_CONFIG_GLOBAL", filepath.Join(t.TempDir(), "gitconfig"))
+
 	// Refresh triggers Activate for the current profile
 	err := sw.Refresh()
-	// May fail due to git not being initialized, but exercises the code path
+	// May fail due to config save, but exercises the code path
 	_ = err
 }
 
@@ -1087,6 +1119,9 @@ func TestActivate_ConfigSaveError(t *testing.T) {
 	origDir, _ := os.Getwd()
 	os.Chdir(gitDir)
 	defer os.Chdir(origDir)
+
+	// Isolate global config so we don't pollute real ~/.gitconfig
+	t.Setenv("GIT_CONFIG_GLOBAL", filepath.Join(t.TempDir(), "gitconfig"))
 
 	mgr.Create(validProfile("work"))
 

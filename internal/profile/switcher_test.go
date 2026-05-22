@@ -1498,3 +1498,48 @@ func TestFindGitDir_EmptyDir(t *testing.T) {
 		t.Errorf("expected empty string for empty git dir output, got %q", result)
 	}
 }
+
+func TestCurrent_DetectSessionProfileByEmail(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not found")
+	}
+
+	sw, mgr, _ := newTestSwitcher(t)
+
+	// Create a profile with a specific email
+	p := &Profile{
+		Name: "emailmatch",
+		Git:  GitConfig{User: GitUser{Name: "Email Match", Email: "emailmatch@test.com"}},
+	}
+	mgr.Create(p)
+
+	// Create a git repo and set local user.email to match the profile
+	gitDir := t.TempDir()
+	cmd := exec.Command("git", "init", gitDir)
+	cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null")
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("git init: %v", err)
+	}
+
+	// Set local email to match the profile (no session marker!)
+	cmd = exec.Command("git", "-C", gitDir, "config", "--local", "user.email", "emailmatch@test.com")
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("git config: %v", err)
+	}
+
+	origDir, _ := os.Getwd()
+	os.Chdir(gitDir)
+	defer os.Chdir(origDir)
+
+	// Current() should detect the profile via detectSessionProfile (email match)
+	name, scope, err := sw.Current()
+	if err != nil {
+		t.Fatalf("Current: %v", err)
+	}
+	if name != "emailmatch" {
+		t.Errorf("name = %q, want emailmatch", name)
+	}
+	if scope != ScopeSession {
+		t.Errorf("scope = %v, want ScopeSession", scope)
+	}
+}

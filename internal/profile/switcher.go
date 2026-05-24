@@ -381,7 +381,13 @@ func (s *Switcher) applyGitConfig(p *Profile, scope string) error {
 		configs[fmt.Sprintf("alias.%s", alias)] = cmd
 	}
 
-	// Custom settings
+	// Custom settings — validate at activation time as a defense-in-depth
+	// measure. Profiles loaded from disk (e.g., after a backup restore or
+	// manual YAML edit) may contain dangerous keys that weren't checked at
+	// creation time.
+	if err := validateCustomKeys(p.Git.Custom); err != nil {
+		return fmt.Errorf("profile %q contains unsafe custom git config: %w", p.Name, err)
+	}
 	for key, val := range p.Git.Custom {
 		configs[key] = val
 	}

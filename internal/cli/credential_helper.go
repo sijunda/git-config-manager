@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,6 +11,7 @@ import (
 	"time"
 
 	githubpkg "git-config-manager/internal/github"
+	providerpkg "git-config-manager/internal/provider"
 
 	"github.com/spf13/cobra"
 )
@@ -25,9 +25,9 @@ func newCredentialHelperCmd() *cobra.Command {
 		Short: "Git credential helper (used internally by git)",
 		Long: `GCM's built-in credential helper for git.
 
-This command is called automatically by git when it needs credentials for
-GitHub. It reads the active profile, loads the encrypted token, and returns
-it to git — bypassing the system keychain entirely.
+This command is called automatically by git when it needs provider credentials.
+It reads the active profile, resolves the provider by host, loads the encrypted
+token, and returns it to git — bypassing the system keychain entirely.
 
 You should not need to call this manually. It is registered during "gcm init"
 and works transparently with git push/pull/clone.`,
@@ -80,15 +80,8 @@ func credentialHelperGet(_ *cobra.Command, _ []string) error {
 		protocol = "https"
 	}
 
-	// Only respond for the configured GitHub server
-	targetHost := "github.com"
-	if ctr.Config.GitHub.APIURL != "" && ctr.Config.GitHub.APIURL != "https://api.github.com" {
-		if parsed, err := url.Parse(ctr.Config.GitHub.APIURL); err == nil && parsed.Host != "" {
-			targetHost = parsed.Host
-		}
-	}
-
-	if host != targetHost {
+	def, ok := ctr.ProviderRegistry.ResolveHost(host)
+	if !ok || !def.Capabilities.Has(providerpkg.CapabilityCredentialHelper) {
 		return nil // Not our domain — let other helpers handle it
 	}
 
@@ -98,31 +91,32 @@ func credentialHelperGet(_ *cobra.Command, _ []string) error {
 		return nil // No active profile — cannot provide credentials
 	}
 
-	// Load token for this profile from GCM's encrypted store
-	token, err := ctr.GitHubClient.LoadToken(currentProfile)
-	if err != nil || token == "" {
+	p, err := ctr.ProfileManager.Get(currentProfile)
+	if err != nil || p == nil {
+		return nil
+	}
+
+	// Load token for this profile/provider from GCM's encrypted store.
+	token, err := loadProviderToken(currentProfile, def, p)
+	if err != nil || token.AccessToken == "" {
 		return nil // No token available
 	}
 
-	// Get username from profile config
-	username := currentProfile
-	p, err := ctr.ProfileManager.Get(currentProfile)
-	if err == nil && p.GitHub != nil && p.GitHub.Username != "" {
-		username = p.GitHub.Username
-	}
+	account := providerAccountForProfile(p, def.ID)
+	username := def.CredentialUsername(currentProfile, account.Username, token)
 
 	// Sanitize all output values to prevent credential protocol injection
 	// (newlines could inject additional key=value pairs).
 	protocol = githubpkg.SanitizeCredentialField(protocol)
 	host = githubpkg.SanitizeCredentialField(host)
 	username = githubpkg.SanitizeCredentialField(username)
-	token = githubpkg.SanitizeCredentialField(token)
+	password := githubpkg.SanitizeCredentialField(token.AccessToken)
 
 	// Output credentials in git credential protocol format
 	fmt.Fprintf(os.Stdout, "protocol=%s\n", protocol)
 	fmt.Fprintf(os.Stdout, "host=%s\n", host)
 	fmt.Fprintf(os.Stdout, "username=%s\n", username)
-	fmt.Fprintf(os.Stdout, "password=%s\n", token)
+	fmt.Fprintf(os.Stdout, "password=%s\n", password)
 
 	return nil
 }
@@ -143,14 +137,17 @@ func parseCredentialInput() map[string]string {
 	return result
 }
 
-// IsCredentialHelperConfigured checks whether GCM is registered as the
-// credential helper for the GitHub server.
+// IsCredentialHelperConfigured checks whether GCM is registered for GitHub.
 func IsCredentialHelperConfigured() bool {
 	server := "https://github.com"
-	if ctr.Config.GitHub.APIURL != "" && ctr.Config.GitHub.APIURL != "https://api.github.com" {
-		server = ctr.Config.GitHub.APIURL
+	if def, ok := ctr.ProviderRegistry.Get(providerpkg.GitHubID); ok {
+		server = def.CredentialServer()
 	}
+	return IsCredentialHelperConfiguredFor(server)
+}
 
+// IsCredentialHelperConfiguredFor checks whether GCM is registered for server.
+func IsCredentialHelperConfiguredFor(server string) bool {
 	key := fmt.Sprintf("credential.%s.helper", server)
 	ctx, cancel := context.WithTimeout(context.Background(), credentialHelperTimeout)
 	defer cancel()
@@ -163,14 +160,8 @@ func IsCredentialHelperConfigured() bool {
 }
 
 // RegisterCredentialHelper configures git to use GCM as the credential helper
-// for github.com. This makes GCM immune to external credential store changes
-// (e.g., VS Code logout clearing the macOS Keychain).
+// for all configured provider hosts.
 func RegisterCredentialHelper() error {
-	server := "https://github.com"
-	if ctr.Config.GitHub.APIURL != "" && ctr.Config.GitHub.APIURL != "https://api.github.com" {
-		server = ctr.Config.GitHub.APIURL
-	}
-
 	// Find the GCM binary path
 	gcmPath, err := os.Executable()
 	if err != nil {
@@ -183,23 +174,27 @@ func RegisterCredentialHelper() error {
 		return fmt.Errorf("cannot resolve GCM binary path: %w", err)
 	}
 
-	key := fmt.Sprintf("credential.%s.helper", server)
 	helperValue := fmt.Sprintf("!%s credential-helper", gcmPath)
 
-	ctx, cancel := context.WithTimeout(context.Background(), credentialHelperTimeout)
-	defer cancel()
+	for _, server := range credentialHelperServers() {
+		key := fmt.Sprintf("credential.%s.helper", server)
+		ctx, cancel := context.WithTimeout(context.Background(), credentialHelperTimeout)
 
-	// Remove any existing GCM credential helper entries for this server
-	_ = exec.CommandContext(ctx, "git", "config", "--global", "--unset-all", key).Run()
+		// Remove any existing GCM credential helper entries for this server
+		_ = exec.CommandContext(ctx, "git", "config", "--global", "--unset-all", key).Run()
 
-	// Set empty value first to reset/override global credential helpers for this host
-	if err := exec.CommandContext(ctx, "git", "config", "--global", key, "").Run(); err != nil {
-		return fmt.Errorf("failed to reset credential helper: %w", err)
-	}
+		// Set empty value first to reset/override global credential helpers for this host
+		if err := exec.CommandContext(ctx, "git", "config", "--global", key, "").Run(); err != nil {
+			cancel()
+			return fmt.Errorf("failed to reset credential helper for %s: %w", server, err)
+		}
 
-	// Add GCM as the credential helper
-	if err := exec.CommandContext(ctx, "git", "config", "--global", "--add", key, helperValue).Run(); err != nil {
-		return fmt.Errorf("failed to register credential helper: %w", err)
+		// Add GCM as the credential helper
+		if err := exec.CommandContext(ctx, "git", "config", "--global", "--add", key, helperValue).Run(); err != nil {
+			cancel()
+			return fmt.Errorf("failed to register credential helper for %s: %w", server, err)
+		}
+		cancel()
 	}
 
 	return nil
@@ -208,16 +203,30 @@ func RegisterCredentialHelper() error {
 // UnregisterCredentialHelper removes GCM from git's credential helper
 // configuration and restores the default system behavior.
 func UnregisterCredentialHelper() error {
-	server := "https://github.com"
-	if ctr.Config.GitHub.APIURL != "" && ctr.Config.GitHub.APIURL != "https://api.github.com" {
-		server = ctr.Config.GitHub.APIURL
+	for _, server := range credentialHelperServers() {
+		key := fmt.Sprintf("credential.%s.helper", server)
+		ctx, cancel := context.WithTimeout(context.Background(), credentialHelperTimeout)
+		_ = exec.CommandContext(ctx, "git", "config", "--global", "--unset-all", key).Run()
+		cancel()
 	}
-
-	key := fmt.Sprintf("credential.%s.helper", server)
-	ctx, cancel := context.WithTimeout(context.Background(), credentialHelperTimeout)
-	defer cancel()
-	_ = exec.CommandContext(ctx, "git", "config", "--global", "--unset-all", key).Run()
 	return nil
+}
+
+func credentialHelperServers() []string {
+	seen := make(map[string]bool)
+	servers := make([]string, 0)
+	for _, def := range ctr.ProviderRegistry.All() {
+		if !def.Capabilities.Has(providerpkg.CapabilityCredentialHelper) {
+			continue
+		}
+		server := def.CredentialServer()
+		if server == "" || seen[server] {
+			continue
+		}
+		seen[server] = true
+		servers = append(servers, server)
+	}
+	return servers
 }
 
 // resolveExecutablePath resolves the real path of the executable,

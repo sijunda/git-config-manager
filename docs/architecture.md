@@ -24,7 +24,8 @@ This document describes GCM's architecture, design principles, component respons
 ├─────────────────────────────────────────────────┤
 │               internal/container/                │  Dependency injection
 ├──────────┬──────────┬──────────┬────────────────┤
-│ profile/ │  ssh/    │  gpg/    │  github/       │  Domain services
+│ profile/ │  ssh/    │  gpg/    │ provider/      │  Domain services
+│          │          │          │ github/gitlab/ │
 │          │          │          │  template/     │
 │          │          │          │  backup/       │
 │          │          │          │  shell/        │
@@ -59,7 +60,9 @@ graph TB
     Container --> ProfileSwitch[Profile Switcher]
     Container --> SSHMgr[SSH Manager]
     Container --> GPGMgr[GPG Manager]
+    Container --> ProviderRegistry[Provider Registry]
     Container --> GHClient[GitHub Client]
+    Container --> GLClient[GitLab Client]
     Container --> ShellMgr[Shell Manager]
     Container --> TemplateMgr[Template Manager]
     Container --> BackupMgr[Backup Manager]
@@ -71,6 +74,8 @@ graph TB
     ProfileSwitch --> Config
     
     GHClient --> TokenStore[Token Store]
+    GLClient --> TokenStore[Token Store]
+    ProviderRegistry --> Config[Config]
     TokenStore --> CryptoService[Crypto Service]
     TokenStore --> Keyring[OS Keychain]
     
@@ -137,6 +142,8 @@ type Container struct {
     SSHManager      *ssh.Manager
     GPGManager      *gpg.Manager
     GitHubClient    *github.Client
+    GitLabClient    *gitlab.Client
+    ProviderRegistry *provider.Registry
     TokenStore      *github.TokenStore
     ShellManager    *shell.Manager
     TemplateManager *template.Manager
@@ -151,7 +158,9 @@ type Container struct {
 | `internal/profile` | CRUD, validation, switching, activation scopes              |
 | `internal/ssh`     | Key generation (Ed25519/RSA/ECDSA), agent management, test  |
 | `internal/gpg`     | Key generation, signing toggle, test signing                |
-| `internal/github`  | OAuth device flow, PAT, gh CLI import, token storage, user API |
+| `internal/provider`| Provider IDs, capabilities, host registry, credential username strategy |
+| `internal/github`  | GitHub OAuth device flow, PAT, gh CLI import, user/key APIs, legacy token-store implementation |
+| `internal/gitlab`  | GitLab PAT verification and user/SSH/GPG key APIs |
 | `internal/shell`   | Shell detection, hook generation, install/uninstall         |
 | `internal/template`| Template CRUD, import/export                                |
 | `internal/backup`  | Create/restore/prune tar.gz backups                         |
@@ -216,6 +225,10 @@ Token storage uses three strategies selected at runtime:
 3. **Plain-text file** — `0600` permissions fallback
 
 Shell hook generation uses a strategy per shell type (Bash, Zsh, Fish, PowerShell).
+
+Provider integrations use a capability-based strategy. The registry resolves a Git credential host to a provider definition; CLI flows then call only the capabilities they need, such as PAT auth, credential helper support, SSH keys, or GPG keys. This keeps future Bitbucket support from requiring another CLI-wide rewrite.
+
+Current tradeoff: provider-aware token APIs live on the historical `internal/github.TokenStore` concrete type for compatibility with existing commands and tests. The behavior is provider-aware; a future cleanup can move the concrete store to `internal/tokenstore` and leave a temporary alias in `internal/github`.
 
 ### Template Method
 

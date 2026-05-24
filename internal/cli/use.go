@@ -8,6 +8,7 @@ import (
 
 	"git-config-manager/internal/audit"
 	"git-config-manager/internal/profile"
+	providerpkg "git-config-manager/internal/provider"
 	"git-config-manager/pkg/ui"
 
 	"github.com/spf13/cobra"
@@ -97,50 +98,7 @@ Examples:
 				ui.Detail("User", fmt.Sprintf("%s <%s>", p.Git.User.Name, p.Git.User.Email))
 			}
 
-			// Switch git credentials: clear old, store new (if available)
-			server := gitServer()
-
-			username := ""
-			if p != nil && p.GitHub != nil && p.GitHub.Username != "" {
-				username = p.GitHub.Username
-			}
-
-			if IsCredentialHelperConfigured() {
-				// GCM is the credential helper — git will ask us dynamically.
-				// Just pin the username so git knows which account to expect.
-				if username == "" {
-					username = name
-				}
-				_ = ctr.GitHubClient.SetGitCredentialUsername(server, username)
-			} else {
-				// Legacy mode: store credentials in system keychain via git credential approve/reject.
-				_ = ctr.GitHubClient.ClearGitCredentials(server)
-
-				if token, err := ctr.GitHubClient.LoadToken(name); err == nil && token != "" {
-					if username == "" {
-						username = name
-					}
-					_ = ctr.GitHubClient.StoreGitCredentials(server, username, token)
-					_ = ctr.GitHubClient.SetGitCredentialUsername(server, username)
-				} else {
-					if username == "" {
-						username = name
-					}
-					_ = ctr.GitHubClient.SetGitCredentialUsername(server, username)
-				}
-			}
-
-			// Proactive token verification (best-effort, short timeout)
-			if token, err := ctr.GitHubClient.LoadToken(name); err == nil && token != "" {
-				ctr.GitHubClient.SetToken(token)
-				verifyCtx, cancel := context.WithTimeout(cobraCmd.Context(), 5*time.Second)
-				defer cancel()
-				if _, err := ctr.GitHubClient.VerifyToken(verifyCtx); err != nil {
-					ui.Blank()
-					ui.Warning("GitHub token for %q may be expired or invalid", name)
-					ui.Print("  %s Re-authenticate: %s", ui.IconArrow, ui.Cyan(fmt.Sprintf("gcm github login %s", name)))
-				}
-			}
+			configureCredentialsForActiveProfile(cobraCmd.Context(), name, p)
 
 			return nil
 		},
@@ -151,6 +109,56 @@ Examples:
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Preview changes without applying")
 
 	return cmd
+}
+
+func configureCredentialsForActiveProfile(ctx context.Context, profileName string, p *profile.Profile) {
+	if p == nil {
+		return
+	}
+
+	for _, def := range ctr.ProviderRegistry.All() {
+		if !def.Capabilities.Has(providerpkg.CapabilityCredentialHelper) {
+			continue
+		}
+
+		token, err := loadProviderToken(profileName, def, p)
+		if err == nil && token.AccessToken != "" {
+			configureGitCredentialsForProvider(profileName, p, def, token)
+			verifyProviderTokenOnUse(ctx, profileName, def, token)
+			continue
+		}
+
+		account := providerAccountForProfile(p, def.ID)
+		if account.Username == "" {
+			continue
+		}
+		if IsCredentialHelperConfiguredFor(def.CredentialServer()) {
+			username := def.CredentialUsername(profileName, account.Username, providerpkg.TokenSet{AuthMethod: account.AuthMethod})
+			_ = ctr.GitHubClient.SetGitCredentialUsername(def.CredentialServer(), username)
+		}
+	}
+}
+
+func verifyProviderTokenOnUse(ctx context.Context, profileName string, def providerpkg.Definition, token providerpkg.TokenSet) {
+	verifyCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	var err error
+	switch def.ID {
+	case providerpkg.GitHubID:
+		ctr.GitHubClient.SetToken(token.AccessToken)
+		_, err = ctr.GitHubClient.VerifyToken(verifyCtx)
+	case providerpkg.GitLabID:
+		ctr.GitLabClient.SetTokenSet(token)
+		_, err = ctr.GitLabClient.VerifyToken(verifyCtx)
+	default:
+		return
+	}
+	if err != nil {
+		ui.Blank()
+		ui.Warning("%s token for %q may be expired or invalid", def.DisplayName, profileName)
+		ui.Print("  %s Re-authenticate: %s", ui.IconArrow, ui.Cyan(fmt.Sprintf("gcm %s login %s", def.ID, profileName)))
+	}
 }
 
 func newCurrentCmd() *cobra.Command {

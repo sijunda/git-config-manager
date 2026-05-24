@@ -24,13 +24,17 @@ package github
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
+	"unicode"
 
 	"git-config-manager/internal/config"
+	"git-config-manager/internal/provider"
 	cryptoSvc "git-config-manager/internal/service/crypto"
 	"git-config-manager/pkg/logger"
 
@@ -115,32 +119,161 @@ func (ts *TokenStore) SetPromptFunc(fn PromptFunc) {
 
 // Save persists a token for the given profile using the configured backend.
 func (ts *TokenStore) Save(profile, token string) error {
-	if ts.cfg.Security.UseKeychain {
-		return ts.saveKeychain(profile, token)
-	}
-	if ts.cfg.Security.EncryptTokens && ts.cfg.Security.MasterPassword {
-		return ts.saveEncrypted(profile, token)
-	}
-	return ts.savePlain(profile, token)
+	return ts.saveTokenValue(profile, token)
 }
 
 // Load retrieves the token for the given profile.
 func (ts *TokenStore) Load(profile string) (string, error) {
-	if ts.cfg.Security.UseKeychain {
-		return ts.loadKeychain(profile)
-	}
-	if ts.cfg.Security.EncryptTokens && ts.cfg.Security.MasterPassword {
-		return ts.loadEncrypted(profile)
-	}
-	return ts.loadPlain(profile)
+	return ts.loadTokenValue(profile)
 }
 
 // Delete removes the stored token for the given profile.
 func (ts *TokenStore) Delete(profile string) error {
-	if ts.cfg.Security.UseKeychain {
-		return ts.deleteKeychain(profile)
+	return ts.deleteTokenValue(profile)
+}
+
+// SaveTokenSet persists a provider-aware token set.
+func (ts *TokenStore) SaveTokenSet(key provider.TokenKey, token provider.TokenSet) error {
+	if token.AccessToken == "" {
+		return fmt.Errorf("access token cannot be empty")
 	}
-	return ts.deleteFile(profile)
+	if token.CreatedAt.IsZero() {
+		token.CreatedAt = time.Now().UTC()
+	}
+	storageKey, err := providerTokenStorageKey(key)
+	if err != nil {
+		return err
+	}
+	payload, err := json.Marshal(token)
+	if err != nil {
+		return fmt.Errorf("marshaling token set: %w", err)
+	}
+	return ts.saveTokenValue(storageKey, string(payload))
+}
+
+// LoadTokenSet retrieves a provider-aware token set. For GitHub, it falls back
+// to the legacy profile-only token key to preserve existing installations.
+func (ts *TokenStore) LoadTokenSet(key provider.TokenKey) (provider.TokenSet, error) {
+	storageKey, err := providerTokenStorageKey(key)
+	if err != nil {
+		return provider.TokenSet{}, err
+	}
+	raw, err := ts.loadTokenValue(storageKey)
+	if err != nil && isLegacyGitHubTokenKey(key) {
+		raw, err = ts.loadTokenValue(key.Profile)
+	}
+	if err != nil {
+		return provider.TokenSet{}, err
+	}
+
+	var token provider.TokenSet
+	if strings.HasPrefix(strings.TrimSpace(raw), "{") {
+		if err := json.Unmarshal([]byte(raw), &token); err != nil {
+			return provider.TokenSet{}, fmt.Errorf("parsing token set: %w", err)
+		}
+	} else {
+		token = provider.TokenSet{AccessToken: raw, AuthMethod: provider.AuthMethodLegacy}
+	}
+	if token.AccessToken == "" {
+		return provider.TokenSet{}, fmt.Errorf("empty token for profile %q provider %q", key.Profile, key.Provider)
+	}
+	return token, nil
+}
+
+// DeleteTokenSet removes a provider-aware token set. GitHub legacy tokens are
+// also deleted when the key resolves to the default GitHub provider.
+func (ts *TokenStore) DeleteTokenSet(key provider.TokenKey) error {
+	storageKey, err := providerTokenStorageKey(key)
+	if err != nil {
+		return err
+	}
+	if err := ts.deleteTokenValue(storageKey); err != nil {
+		return err
+	}
+	if isLegacyGitHubTokenKey(key) {
+		return ts.deleteTokenValue(key.Profile)
+	}
+	return nil
+}
+
+func (ts *TokenStore) saveTokenValue(storageKey, token string) error {
+	if ts.cfg.Security.UseKeychain {
+		return ts.saveKeychain(storageKey, token)
+	}
+	if ts.cfg.Security.EncryptTokens && ts.cfg.Security.MasterPassword {
+		return ts.saveEncrypted(storageKey, token)
+	}
+	return ts.savePlain(storageKey, token)
+}
+
+func (ts *TokenStore) loadTokenValue(storageKey string) (string, error) {
+	if ts.cfg.Security.UseKeychain {
+		return ts.loadKeychain(storageKey)
+	}
+	if ts.cfg.Security.EncryptTokens && ts.cfg.Security.MasterPassword {
+		return ts.loadEncrypted(storageKey)
+	}
+	return ts.loadPlain(storageKey)
+}
+
+func (ts *TokenStore) deleteTokenValue(storageKey string) error {
+	if ts.cfg.Security.UseKeychain {
+		return ts.deleteKeychain(storageKey)
+	}
+	return ts.deleteFile(storageKey)
+}
+
+func providerTokenStorageKey(key provider.TokenKey) (string, error) {
+	if key.Profile == "" {
+		return "", fmt.Errorf("profile name cannot be empty")
+	}
+	if key.Provider == "" {
+		return "", fmt.Errorf("provider cannot be empty")
+	}
+	parts := []string{
+		key.Profile,
+		string(key.Provider),
+		key.Host,
+		key.Account,
+	}
+	if parts[2] == "" {
+		parts[2] = "default"
+	}
+	if parts[3] == "" {
+		parts[3] = "default"
+	}
+	for i, part := range parts {
+		parts[i] = safeTokenComponent(part)
+		if parts[i] == "" {
+			return "", fmt.Errorf("invalid token key component")
+		}
+	}
+	return strings.Join(parts, "__"), nil
+}
+
+func safeTokenComponent(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	var b strings.Builder
+	for _, r := range value {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r)
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == '-' || r == '_':
+			b.WriteRune(r)
+		case unicode.IsLetter(r) || unicode.IsDigit(r):
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
+	}
+	return strings.Trim(b.String(), "_")
+}
+
+func isLegacyGitHubTokenKey(key provider.TokenKey) bool {
+	host := strings.ToLower(strings.TrimSpace(key.Host))
+	return key.Provider == provider.GitHubID && key.Account == "" && (host == "" || host == "github.com")
 }
 
 // ---------------------------------------------------------------------------

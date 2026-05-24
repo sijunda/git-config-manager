@@ -63,6 +63,7 @@ Run "gcm <command> --help" for details on any command.`,
 
 	// ─── GitHub ───
 	rootCmd.AddCommand(newGitHubCmd())
+	rootCmd.AddCommand(newGitLabCmd())
 
 	// ─── Shell ───
 	rootCmd.AddCommand(newInitCmd())

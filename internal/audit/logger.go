@@ -28,6 +28,8 @@ const (
 	ActionGPGGenerate     Action = "gpg.generate"
 	ActionGitHubLogin     Action = "github.login"
 	ActionGitHubLogout    Action = "github.logout"
+	ActionProviderLogin   Action = "provider.login"
+	ActionProviderLogout  Action = "provider.logout"
 	ActionBackupCreate    Action = "backup.create"
 	ActionBackupRestore   Action = "backup.restore"
 	ActionShellInit       Action = "shell.init"

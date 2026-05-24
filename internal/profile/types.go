@@ -7,12 +7,13 @@ import (
 
 // Profile represents a complete Git identity configuration.
 type Profile struct {
-	Name     string        `yaml:"name" json:"name"`
-	Git      GitConfig     `yaml:"git" json:"git"`
-	SSH      *SSHConfig    `yaml:"ssh,omitempty" json:"ssh,omitempty"`
-	GPG      *GPGConfig    `yaml:"gpg,omitempty" json:"gpg,omitempty"`
-	GitHub   *GitHubConfig `yaml:"github,omitempty" json:"github,omitempty"`
-	Metadata Metadata      `yaml:"metadata" json:"metadata"`
+	Name      string                           `yaml:"name" json:"name"`
+	Git       GitConfig                        `yaml:"git" json:"git"`
+	SSH       *SSHConfig                       `yaml:"ssh,omitempty" json:"ssh,omitempty"`
+	GPG       *GPGConfig                       `yaml:"gpg,omitempty" json:"gpg,omitempty"`
+	GitHub    *GitHubConfig                    `yaml:"github,omitempty" json:"github,omitempty"`
+	Providers map[string]ProviderAccountConfig `yaml:"providers,omitempty" json:"providers,omitempty"`
+	Metadata  Metadata                         `yaml:"metadata" json:"metadata"`
 }
 
 // GitConfig holds all git configuration for a profile.
@@ -87,6 +88,15 @@ type GPGConfig struct {
 type GitHubConfig struct {
 	Username   string `yaml:"username" json:"username"`
 	TokenPath  string `yaml:"token_path,omitempty" json:"token_path,omitempty"`
+	UploadKeys *bool  `yaml:"upload_keys,omitempty" json:"upload_keys,omitempty"`
+}
+
+// ProviderAccountConfig holds per-profile account settings for any provider.
+type ProviderAccountConfig struct {
+	Username   string `yaml:"username" json:"username"`
+	Account    string `yaml:"account,omitempty" json:"account,omitempty"`
+	TokenPath  string `yaml:"token_path,omitempty" json:"token_path,omitempty"`
+	AuthMethod string `yaml:"auth_method,omitempty" json:"auth_method,omitempty"`
 	UploadKeys *bool  `yaml:"upload_keys,omitempty" json:"upload_keys,omitempty"`
 }
 

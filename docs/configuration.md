@@ -13,7 +13,7 @@ GCM stores all data under `~/.gcm/`. This document covers the directory layout, 
 │   ├── work.yaml
 │   └── personal.yaml
 ├── templates/            # YAML template blueprints
-├── tokens/        (0700) # Encrypted GitHub tokens
+├── tokens/        (0700) # Encrypted provider tokens
 ├── backups/       (0700) # Timestamped .tar.gz snapshots
 ├── logs/          (0700) # Audit logs (audit-YYYY-MM-DD.jsonl)
 └── cache/                # Transient data (safe to delete)
@@ -68,6 +68,39 @@ github:
       - repo
       - admin:public_key
       - admin:gpg_key
+
+# Provider integrations. The legacy github block remains supported, but
+# new integrations should use this provider map.
+providers:
+  github:
+    type: github
+    api_url: "https://api.github.com"
+    web_url: "https://github.com"
+    git_hosts:
+      - github.com
+    ssh_host: github.com
+    upload_keys: true
+    auth:
+      default_method: pat
+      scopes:
+        - repo
+        - admin:public_key
+        - admin:gpg_key
+  gitlab:
+    type: gitlab
+    api_url: "https://gitlab.com/api/v4"
+    web_url: "https://gitlab.com"
+    git_hosts:
+      - gitlab.com
+    ssh_host: gitlab.com
+    upload_keys: true
+    auth:
+      default_method: pat
+      scopes:
+        - api
+        - read_user
+        - read_repository
+        - write_repository
 
 # Backup settings.
 backup:
@@ -163,6 +196,17 @@ github:
   token_path: ""                       # Token file path (optional, managed by GCM)
   upload_keys: true                    # Upload SSH/GPG keys to GitHub (optional)
 
+# Provider account configuration (optional section).
+providers:
+  github:
+    username: "jane-acme"
+    auth_method: "pat"
+    upload_keys: true
+  gitlab:
+    username: "jane-gitlab"
+    auth_method: "pat"
+    upload_keys: true
+
 # Lifecycle metadata (managed by GCM, not typically edited by hand).
 metadata:
   created: "2026-01-15T10:30:00Z"
@@ -191,7 +235,7 @@ GCM validates profiles on several levels:
 - **Schema** — required fields present, valid types
 - **SSH paths** — key file exists, correct permissions (0600)
 - **GPG keys** — key ID exists in the GPG keyring
-- **GitHub** — token is present and decryptable
+- **Providers** — provider tokens are present and decryptable
 
 Run validation:
 

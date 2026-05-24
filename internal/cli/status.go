@@ -11,6 +11,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	providerpkg "git-config-manager/internal/provider"
 	"git-config-manager/pkg/ui"
 
 	"github.com/spf13/cobra"
@@ -35,6 +36,34 @@ func quickVerifyToken(token, apiURL string) error {
 		return err
 	}
 	// Drain body before close to allow connection reuse.
+	io.Copy(io.Discard, io.LimitReader(resp.Body, 4096)) //nolint:errcheck
+	resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	return nil
+}
+
+func quickVerifyGitLabToken(token providerpkg.TokenSet, apiURL string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", strings.TrimRight(apiURL, "/")+"/user", nil)
+	if err != nil {
+		return err
+	}
+	if token.Bearer() {
+		req.Header.Set("Authorization", "Bearer "+token.AccessToken)
+	} else {
+		req.Header.Set("PRIVATE-TOKEN", token.AccessToken)
+	}
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
 	io.Copy(io.Discard, io.LimitReader(resp.Body, 4096)) //nolint:errcheck
 	resp.Body.Close()
 
@@ -208,6 +237,79 @@ func runStatus() error {
 				ui.Print("      %s %s", ui.Dim("└─"), ui.Cyan(e.hint))
 			} else {
 				ui.Print("    %s %-*s %s %s", e.icon, maxNameLen, e.name, ui.Dim(padRight(e.username, maxUserLen)), e.status)
+			}
+		}
+	}
+
+	ui.Blank()
+	ui.Divider()
+
+	// ─── GitLab Auth ───
+	ui.Blank()
+	ui.Print("  %s", ui.Bold("GitLab Auth"))
+
+	gitlabDef, gitlabConfigured := ctr.ProviderRegistry.Get(providerpkg.GitLabID)
+	if !gitlabConfigured {
+		ui.Print("    %s GitLab provider not configured", ui.Dim("—"))
+	} else if len(profiles) == 0 {
+		ui.Print("    %s No profiles configured", ui.Dim("—"))
+	} else {
+		type glEntry struct {
+			icon     string
+			name     string
+			username string
+			status   string
+			hint     string
+		}
+		entries := make([]glEntry, 0, len(profiles))
+		maxGitLabUserLen := 0
+
+		for _, p := range profiles {
+			token, loadErr := loadProviderToken(p.Name, gitlabDef, p)
+			if loadErr != nil || token.AccessToken == "" {
+				entries = append(entries, glEntry{
+					icon:   ui.Red(ui.IconError),
+					name:   p.Name,
+					status: ui.Dim("not configured"),
+					hint:   fmt.Sprintf("gcm gitlab login %s", p.Name),
+				})
+				continue
+			}
+
+			account := providerAccountForProfile(p, providerpkg.GitLabID)
+			username := ""
+			if account.Username != "" {
+				username = "@" + account.Username
+			}
+			if len(username) > maxGitLabUserLen {
+				maxGitLabUserLen = len(username)
+			}
+
+			status := ui.Green("valid")
+			icon := ui.Green(ui.IconSuccess)
+			if verifyErr := quickVerifyGitLabToken(token, gitlabDef.APIURL); verifyErr != nil {
+				if strings.Contains(verifyErr.Error(), "context deadline exceeded") || strings.Contains(verifyErr.Error(), "timeout") {
+					status = ui.Yellow("timeout")
+					icon = ui.Yellow(ui.IconWarning)
+				} else {
+					status = ui.Red("expired/invalid")
+					icon = ui.Red(ui.IconError)
+					issues = append(issues, fmt.Sprintf("GitLab token for %q expired — run: gcm gitlab login %s", p.Name, p.Name))
+				}
+			}
+
+			entries = append(entries, glEntry{icon: icon, name: p.Name, username: username, status: status})
+		}
+
+		if maxGitLabUserLen < 12 {
+			maxGitLabUserLen = 12
+		}
+		for _, e := range entries {
+			if e.hint != "" {
+				ui.Print("    %s %-*s %s %s", e.icon, maxNameLen, e.name, ui.Dim(padRight("—", maxGitLabUserLen)), e.status)
+				ui.Print("      %s %s", ui.Dim("└─"), ui.Cyan(e.hint))
+			} else {
+				ui.Print("    %s %-*s %s %s", e.icon, maxNameLen, e.name, ui.Dim(padRight(e.username, maxGitLabUserLen)), e.status)
 			}
 		}
 	}

@@ -61,7 +61,7 @@ gcm st           # alias
 
 **Aliases:** `gcm st`
 
-Shows: active profile, all profiles summary, GitHub auth status, SSH keys, and any issues that need attention.
+Shows: active profile, all profiles summary, GitHub/GitLab auth status, SSH keys, and any issues that need attention.
 
 ---
 
@@ -76,7 +76,7 @@ gcm init
 **What it does:**
 1. Detects your shell (`bash`, `zsh`, `fish`, `powershell`)
 2. Appends a marked hook block to your shell config file
-3. Registers GCM as git's credential helper for github.com
+3. Registers GCM as git's credential helper for configured provider hosts
 4. Reports the shell and config file path
 
 **Output:** The config file path. Restart your shell afterward.
@@ -228,14 +228,14 @@ gcm use work --dry-run       # preview changes, apply nothing
 1. Loads the profile from `~/.gcm/profiles/<name>.yaml`
 2. Writes Git config (`user.name`, `user.email`, `core.editor`, `commit.gpgsign`, `user.signingkey`)
 3. Loads the SSH key into the ssh-agent via `ssh-add` (if configured and key file exists)
-4. **Pins `credential.https://github.com.username`** so git only uses credentials belonging to this profile
+4. **Pins provider credential usernames** so git only uses credentials belonging to this profile
 5. If GCM is the credential helper: git will ask GCM dynamically for credentials (no system keychain involved)
 6. If GCM is NOT the credential helper (legacy): clears old credentials via `git credential reject` and stores the new profile's token via `git credential approve`
 7. Increments the profile's `usage_count` and `last_used`
 8. Logs the activation to the audit log
-9. Verifies the GitHub token validity (best-effort, warns if expired)
+9. Verifies configured provider token validity (best-effort, warns if expired)
 
-> **Credential Isolation:** After switching, git clone/push/pull will only work with the active profile's GitHub account. Other profiles' credentials cannot bleed through.
+> **Credential Isolation:** After switching, git clone/push/pull will only work with the active profile's configured provider accounts. Other profiles' credentials cannot bleed through.
 
 **Scopes:**
 - **Session** (default, in a git repo) — writes a `.git/gcm-session` marker file for reliable detection, plus local git config
@@ -566,6 +566,68 @@ gcm github user work
 
 ---
 
+## `gcm gitlab`
+
+Manage GitLab integration. The current GitLab MVP supports Personal Access Token authentication, token verification, credential helper integration, status checks, and SSH/GPG key upload after login.
+
+**Aliases:** `gcm gl`
+
+### `gcm gitlab login <profile>`
+
+Authenticate with a GitLab Personal Access Token (PAT).
+
+```bash
+gcm gitlab login work
+echo "$GITLAB_TOKEN" | gcm gitlab login work
+```
+
+**Recommended scopes:** `api`, `read_user`, `read_repository`, `write_repository`.
+
+For self-managed GitLab, configure `providers.gitlab.api_url`, `providers.gitlab.web_url`, and `providers.gitlab.git_hosts` before login.
+
+**What it does:**
+1. Reads token from interactive input or stdin pipe
+2. Verifies the token against the configured GitLab API
+3. Stores a provider-aware token under the active profile/provider/host key
+4. Updates `profile.providers.gitlab.username`
+5. If this is the active profile, updates Git credentials for the configured GitLab host
+6. During interactive login, offers to upload SSH/GPG keys when available
+
+### `gcm gitlab status`
+
+Show GitLab authentication status for all profiles.
+
+```bash
+gcm gitlab status
+```
+
+### `gcm gitlab logout <profile>`
+
+Remove the stored GitLab token for a profile and optionally clear active Git credentials.
+
+```bash
+gcm gitlab logout work
+gcm gitlab logout work --clear-credentials=false
+```
+
+### `gcm gitlab verify <profile>`
+
+Verify that the stored GitLab token is still valid.
+
+```bash
+gcm gitlab verify work
+```
+
+### `gcm gitlab user <profile>`
+
+Show GitLab user information for the authenticated profile.
+
+```bash
+gcm gitlab user work
+```
+
+---
+
 ## `gcm template`
 
 Manage configuration templates. Running `gcm template` with no subcommand defaults to `gcm template list`.
@@ -735,7 +797,7 @@ gcm doctor
 - **Dependencies:** Git, SSH, GPG (version and availability)
 - **Services:** SSH agent status
 - **Shell:** Shell integration status
-- **Credential Helper:** Whether GCM is registered as git's credential helper for github.com
+- **Credential Helper:** Whether GCM is registered as git's credential helper for configured provider hosts
 - **Configuration:** Config file location, profile count, template count
 
 ---
@@ -781,21 +843,22 @@ Git credential helper implementation. This command is hidden from normal help ou
 ```bash
 # Not called directly — git invokes it automatically when configured:
 # credential.https://github.com.helper = !/path/to/gcm credential-helper
+# credential.https://gitlab.com.helper = !/path/to/gcm credential-helper
 ```
 
 **Subcommands:**
 - `get` — Reads the active profile's token from GCM's encrypted store and returns it to git in credential protocol format
 - `store` — No-op (GCM manages its own token storage)
-- `erase` — No-op (use `gcm github logout` to remove tokens)
+- `erase` — No-op (use provider logout commands to remove tokens)
 
 **Registration:**
 - Automatically registered by `gcm init` and `gcm setup`
 - Verified by `gcm doctor`
 
 **How it works:**
-1. Git calls `gcm credential-helper get` when it needs credentials for github.com
-2. GCM determines the active profile via session/local/global scope
-3. GCM loads the token from its encrypted store (`~/.gcm/tokens/<profile>`)
+1. Git calls `gcm credential-helper get` when it needs credentials for a configured provider host
+2. GCM resolves the provider from the host and determines the active profile via session/local/global scope
+3. GCM loads the provider-aware token from its encrypted store
 4. GCM returns `protocol`, `host`, `username`, and `password` to git
 
 This makes git authentication independent of the system keychain (macOS Keychain, Windows Credential Manager, etc.), so external credential changes (VS Code logout, browser session clear) cannot break git operations.
@@ -887,6 +950,13 @@ GitHub
   gcm github logout <name>                      Remove token
   gcm github verify <name>                      Verify token
   gcm github user <name>                        Show user info
+
+GitLab
+  gcm gitlab login <name>                       Personal Access Token
+  gcm gitlab status                             Auth status for all profiles
+  gcm gitlab logout <name>                      Remove token
+  gcm gitlab verify <name>                      Verify token
+  gcm gitlab user <name>                        Show user info
 
 Templates
   gcm template create <name> [-i] [--from-profile]  Create template

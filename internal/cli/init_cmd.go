@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"strings"
+
 	"git-config-manager/internal/audit"
 	"git-config-manager/internal/shell"
 	"git-config-manager/pkg/ui"
@@ -15,7 +17,7 @@ func newInitCmd() *cobra.Command {
 		Use:   "init",
 		Short: "Set up shell integration and credential helper",
 		Long: `Install shell hooks for auto-switching and prompt integration,
-and register GCM as the git credential helper for GitHub.
+and register GCM as the git credential helper for configured providers.
 
 Use --force to reinstall even if already configured.
 
@@ -69,14 +71,14 @@ Examples:
 				ui.Info("Restart your shell or run: source %s", newConfigFile)
 			}
 
-			// Register GCM as credential helper for GitHub
+			// Register GCM as credential helper for configured providers.
 			ui.Blank()
 			if err := RegisterCredentialHelper(); err != nil {
 				ui.Warning("Could not register credential helper: %v", err)
 				ui.Print("  Git will fall back to the system keychain for credentials.")
 			} else {
 				ui.Success("Git credential helper registered!")
-				ui.Detail("Scope", "github.com")
+				ui.Detail("Scope", strings.Join(credentialHelperServers(), ", "))
 			}
 
 			// Clear global git identity if no profile is set as default.

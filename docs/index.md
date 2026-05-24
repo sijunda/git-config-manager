@@ -19,6 +19,7 @@ If you are new to GCM or want to learn how to use it effectively, start here.
 - **[Commands Reference](commands.md)** — A complete reference for every CLI command and flag.
 - **[Interactive Guide](interactive-guide.md)** — Every prompt, term, and option explained in plain English.
 - **[Configuration](configuration.md)** — Customize GCM with `config.yaml`, profile YAML, and templates.
+- **[Provider Integrations](providers.md)** — GitHub, GitLab, and future provider architecture.
 - **[Shell Integration](shell-integration.md)** — Auto-switch profiles on `cd`, prompt indicators.
 - **[Examples](examples.md)** — Real-world workflows, CI/CD, teams, and scripting.
 - **[Migration Guide](migration-guide.md)** — Migrate from manual Git config, shell functions, or other tools.
@@ -35,6 +36,7 @@ If you want to contribute to GCM or understand its internals, this section is fo
 
 - **[Contributing](contributing.md)** — How to report bugs, propose features, and submit pull requests.
 - **[Architecture Overview](architecture.md)** — Layers, design patterns, and component responsibilities.
+- **[Provider Integrations](providers.md)** — Provider abstraction, token storage, credential helper flow.
 - **[Project Structure](project-structure.md)** — A map of every package and file in the codebase.
 - **[Data Flow & Diagrams](data-flow.md)** — Trace how key operations work end-to-end.
 - **[Dependencies](dependencies.md)** — External modules, standard library usage, and rationale.
@@ -77,6 +79,7 @@ docs/
 │   ├── usage.md             — End-to-end usage guide
 │   ├── commands.md          — Every command, flag, and exit code
 │   ├── configuration.md     — config.yaml, profile schema, templates
+│   ├── providers.md         — GitHub/GitLab provider integrations
 │   ├── shell-integration.md — Shell hooks, auto-switching
 │   ├── examples.md          — Workflows and recipes
 │   ├── migration-guide.md   — Migrate from other setups

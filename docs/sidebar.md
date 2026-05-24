@@ -17,6 +17,7 @@ Navigation for the GCM documentation site.
 - [Commands Reference](commands.md)
 - [Interactive Guide](interactive-guide.md)
 - [Configuration](configuration.md)
+- [Provider Integrations](providers.md)
 - [Shell Integration](shell-integration.md)
 - [Examples & Recipes](examples.md)
 - [Migration Guide](migration-guide.md)
@@ -28,6 +29,7 @@ Navigation for the GCM documentation site.
 ## Technical Reference
 
 - [Architecture](architecture.md)
+- [Provider Integrations](providers.md)
 - [Project Structure](project-structure.md)
 - [Data Flow & Diagrams](data-flow.md)
 - [Security Model](security.md)

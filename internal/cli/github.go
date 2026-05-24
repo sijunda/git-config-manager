@@ -5,6 +5,7 @@ import (
 
 	"git-config-manager/internal/audit"
 	"git-config-manager/internal/profile"
+	providerpkg "git-config-manager/internal/provider"
 	"git-config-manager/pkg/ui"
 
 	"github.com/spf13/cobra"
@@ -12,6 +13,11 @@ import (
 
 // gitServer returns the git host URL for credential operations.
 func gitServer() string {
+	if ctr != nil && ctr.ProviderRegistry != nil {
+		if def, ok := ctr.ProviderRegistry.Get(providerpkg.GitHubID); ok {
+			return def.CredentialServer()
+		}
+	}
 	server := ctr.Config.GitHub.APIURL
 	if server == "" || server == "https://api.github.com" {
 		return "https://github.com"

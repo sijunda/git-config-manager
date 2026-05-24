@@ -33,8 +33,6 @@
 
 ## Demo & Preview
 
-![GCM Workflow Demo](docs/demo.gif)
-
 <details>
 <summary><strong>Individual Feature Demos</strong> (click to expand)</summary>
 
@@ -59,7 +57,12 @@
 
 ## Installation
 
-### From Source (recommended today)
+### One-Line Installation
+```bash
+curl -sSL https://raw.githubusercontent.com/sijunda/github-config-manager/main/scripts/install.sh | bash
+```
+
+### From Source
 ```bash
 git clone https://github.com/sijunda/git-config-manager.git
 cd git-config-manager
@@ -67,18 +70,6 @@ make build          # produces ./bin/gcm
 make install        # installs to $(go env GOPATH)/bin/gcm (no sudo needed)
 # or: make install-system   # installs to /usr/local/bin/gcm (needs sudo)
 ```
-
-Make sure `$(go env GOPATH)/bin` is on your `PATH` — typically `~/go/bin`.
-
-### Via `go install` (once published)
-```bash
-go install github.com/sijunda/git-config-manager/cmd/gcm@latest
-```
-
-> **Note:** Requires the module to be published on GitHub. Until then, use "From Source" above.
-
-### Homebrew / Binary (coming soon)
-A Homebrew tap and prebuilt release binaries are planned. For now, build from source.
 
 ## Quick Start
 

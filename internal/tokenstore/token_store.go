@@ -80,6 +80,8 @@ var (
 	encryptData  = func(c *cryptoSvc.Service, plaintext, key []byte) ([]byte, error) { return c.Encrypt(plaintext, key) }
 )
 
+var marshalTokenSet = json.Marshal
+
 // PromptFunc asks the user for input (e.g. a master password).
 // It is supplied by the CLI layer so the token store itself has no
 // dependency on terminal I/O.
@@ -144,7 +146,7 @@ func (ts *TokenStore) SaveTokenSet(key provider.TokenKey, token provider.TokenSe
 	if err != nil {
 		return err
 	}
-	payload, err := json.Marshal(token)
+	payload, err := marshalTokenSet(token)
 	if err != nil {
 		return fmt.Errorf("marshaling token set: %w", err)
 	}

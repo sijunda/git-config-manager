@@ -79,7 +79,7 @@ for Git identity management.
 3. Create your profile: `gcm profile create work -i`
 4. Set up shell integration: `gcm init && exec $SHELL`
 5. Pin this project: `echo "work" > .gcm-profile`
-6. Authenticate GitHub: `gcm github login work`
+6. Connect the provider: `gcm connect work --provider github`
 ```
 
 ### 4. Set Up CI/CD
@@ -145,7 +145,7 @@ Follow these steps when joining a project that uses GCM:
   ```bash
   gcm profile create work -i
   ```
-  The interactive wizard prompts for name, email, SSH key, GPG signing, and GitHub username. Review the team template (`gcm template show company-standard`) and match those settings.
+  The interactive wizard prompts for name, email, SSH key, GPG signing, and one provider account. Review the team template (`gcm template show company-standard`) and match those settings.
 
 - [ ] **Generate SSH key**
   ```bash
@@ -153,9 +153,9 @@ Follow these steps when joining a project that uses GCM:
   # Copy public key to GitHub: gcm ssh copy work
   ```
 
-- [ ] **Authenticate GitHub**
+- [ ] **Connect provider authentication**
   ```bash
-  gcm github login work
+  gcm connect work --provider github
   ```
 
 - [ ] **Set up shell integration**
@@ -215,7 +215,7 @@ git config user.email
 ### Rotating SSH Keys
 
 ```bash
-# Generate new key (auto-uploads to GitHub if logged in)
+# Generate new key (auto-uploads to the connected provider if authenticated)
 gcm ssh generate work -t ed25519
 
 # If not logged in, upload manually:

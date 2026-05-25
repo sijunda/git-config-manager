@@ -29,7 +29,7 @@ gcm doctor
 gcm init
 ```
 
-This installs shell hooks (auto-switch, prompt indicator) and registers the built-in credential helper for `github.com`.
+This installs shell hooks (auto-switch, prompt indicator) and registers the built-in credential helper for configured provider hosts.
 
 Restart your terminal:
 
@@ -57,7 +57,7 @@ The wizard prompts for:
 1. Name and email
 2. SSH key generation
 3. GPG signing setup
-4. GitHub username
+4. Provider account (GitHub, GitLab, etc.)
 
 ## 5. Activate It
 
@@ -99,7 +99,7 @@ gcm use <name>                      # Activate for session
 gcm use <name> --global             # Set as default
 gcm use <name> --local              # Pin to current directory
 gcm ssh generate <name>             # Generate SSH key
-gcm github login <name>             # Authenticate with GitHub
+gcm connect <name> --provider github # Authenticate with a provider
 gcm backup create                   # Back up your config
 gcm doctor                          # Health check
 ```

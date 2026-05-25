@@ -24,9 +24,9 @@ Yes. GCM is licensed under the [MIT License](../LICENSE).
 - **Linux** (amd64, arm64, arm)
 - **Windows** (amd64)
 
-### Does GCM support multiple Git hosts (GitLab, Bitbucket)?
+### Does GCM support multiple Git hosts (GitHub, GitLab, Bitbucket)?
 
-GCM's profile management (Git config, SSH keys, GPG signing) works with any Git host. The GitHub-specific features (`gcm github login/verify/user`) only work with GitHub's API, but your SSH keys and Git identity work everywhere.
+Yes. GCM has provider-aware profile, credential, SSH, and GPG flows for GitHub and GitLab. Each profile is scoped to exactly one provider, so keep separate profiles for separate provider accounts. Bitbucket is planned but not implemented yet.
 
 ---
 
@@ -90,7 +90,7 @@ A profile is a named Git identity. It contains:
 - Git user info (name, email, editor)
 - SSH key reference
 - GPG signing configuration
-- GitHub username/token reference
+- One provider account reference (GitHub, GitLab, etc.)
 - Metadata (created, last used, usage count)
 
 Profiles are stored as YAML files in `~/.gcm/profiles/`.

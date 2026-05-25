@@ -321,7 +321,7 @@ func runSetupProviderAuthentication(ctx context.Context, profileName string) err
 		return err
 	}
 	if !authenticate {
-		ui.Info("Skipped — you can run gcm github login or gcm gitlab login later")
+		ui.Info("Skipped — you can run gcm connect %s later", profileName)
 		return nil
 	}
 
@@ -345,7 +345,7 @@ func runSetupProviderAuthentication(ctx context.Context, profileName string) err
 	def := byOption[selected]
 	switch def.ID {
 	case providerpkg.GitHubID:
-		if err := runSetupGitHubAuthentication(ctx, profileName); err != nil {
+		if err := runSetupGitHubAuthentication(ctx, profileName, def); err != nil {
 			return err
 		}
 	case providerpkg.GitLabID:
@@ -359,7 +359,7 @@ func runSetupProviderAuthentication(ctx context.Context, profileName string) err
 	return nil
 }
 
-func runSetupGitHubAuthentication(ctx context.Context, profileName string) error {
+func runSetupGitHubAuthentication(ctx context.Context, profileName string, def providerpkg.Definition) error {
 	ui.SubHeader("GitHub Authentication")
 	method, err := ui.AskSelect("Authentication method:", []string{
 		"Personal Access Token (paste a token)",
@@ -371,8 +371,10 @@ func runSetupGitHubAuthentication(ctx context.Context, profileName string) error
 
 	if method == "Personal Access Token (paste a token)" {
 		ui.Blank()
-		ui.Print("Get a token at: %s", ui.Cyan("https://github.com/settings/tokens"))
-		ui.Print("Scopes needed: repo, admin:public_key, admin:gpg_key")
+		ui.Print("Get a token at: %s", ui.Cyan(providerPATURL(def)))
+		if len(def.Scopes) > 0 {
+			ui.Print("Recommended scopes: %s", strings.Join(def.Scopes, ", "))
+		}
 		ui.Blank()
 
 		token, tokenErr := ui.AskPassword("Paste your GitHub token")
@@ -384,21 +386,16 @@ func runSetupGitHubAuthentication(ctx context.Context, profileName string) error
 			return nil
 		}
 
-		ctr.GitHubClient.SetToken(token)
-		user, verifyErr := ctr.GitHubClient.VerifyToken(ctx)
+		username, _, verifyErr := verifyProviderPAT(ctx, def, token)
 		if verifyErr != nil {
 			ui.Error("GitHub token is invalid: %v", verifyErr)
-			ui.Print("  %s You can try again later: %s", ui.IconArrow, ui.Cyan(fmt.Sprintf("gcm github login %s", profileName)))
+			ui.Print("  %s You can try again later: %s", ui.IconArrow, ui.Cyan(fmt.Sprintf("gcm connect %s --provider github", profileName)))
 			return nil
 		}
 		p, _ := ctr.ProfileManager.Get(profileName)
 		if p != nil {
-			def, defErr := githubProviderDefinition()
-			if defErr != nil {
-				return defErr
-			}
 			tokenSet := providerpkg.TokenSet{AccessToken: token, AuthMethod: providerpkg.AuthMethodPAT, TokenType: "pat"}
-			ok, transitionErr := applyProfileProviderTransition(ctx, profileName, p, def, user.Login, providerpkg.AuthMethodPAT, true, func() error {
+			ok, transitionErr := applyProfileProviderTransition(ctx, profileName, p, def, username, providerpkg.AuthMethodPAT, true, func() error {
 				return saveProviderToken(profileName, def, p, tokenSet)
 			})
 			if transitionErr != nil {
@@ -412,7 +409,7 @@ func runSetupGitHubAuthentication(ctx context.Context, profileName string) error
 			_ = ctr.GitHubClient.SaveToken(profileName, token)
 			_ = ctr.ProfileManager.Update(p)
 		}
-		ui.Success("Authenticated with GitHub as @%s", user.Login)
+		ui.Success("Authenticated with GitHub as @%s", username)
 		activateAsGlobalIfFirst(profileName)
 		return nil
 	}
@@ -421,7 +418,7 @@ func runSetupGitHubAuthentication(ctx context.Context, profileName string) error
 	dcr, flowErr := ctr.GitHubClient.InitiateDeviceFlow()
 	if flowErr != nil {
 		ui.Error("Could not start GitHub device flow: %v", flowErr)
-		ui.Print("  %s Try PAT instead: %s", ui.IconArrow, ui.Cyan(fmt.Sprintf("gcm github login %s", profileName)))
+		ui.Print("  %s Try PAT instead: %s", ui.IconArrow, ui.Cyan(fmt.Sprintf("gcm connect %s --provider github", profileName)))
 		return nil
 	}
 	ui.Print("Open this URL in your browser:")
@@ -447,10 +444,6 @@ func runSetupGitHubAuthentication(ctx context.Context, profileName string) error
 		login = user.Login
 	}
 	if p, _ := ctr.ProfileManager.Get(profileName); p != nil && user != nil {
-		def, defErr := githubProviderDefinition()
-		if defErr != nil {
-			return defErr
-		}
 		tokenSet := providerpkg.TokenSet{AccessToken: token, AuthMethod: providerpkg.AuthMethodOAuthDevice, TokenType: "bearer"}
 		ok, transitionErr := applyProfileProviderTransition(ctx, profileName, p, def, user.Login, providerpkg.AuthMethodOAuthDevice, true, func() error {
 			return saveProviderToken(profileName, def, p, tokenSet)
@@ -487,17 +480,16 @@ func runSetupGitLabAuthentication(ctx context.Context, profileName string, def p
 	}
 
 	tokenSet := providerpkg.TokenSet{AccessToken: token, AuthMethod: providerpkg.AuthMethodPAT, TokenType: "pat"}
-	ctr.GitLabClient.SetTokenSet(tokenSet)
-	user, verifyErr := ctr.GitLabClient.VerifyToken(ctx)
+	username, _, verifyErr := verifyProviderPAT(ctx, def, token)
 	if verifyErr != nil {
 		ui.Error("GitLab token is invalid: %v", verifyErr)
-		ui.Print("  %s You can try again later: %s", ui.IconArrow, ui.Cyan(fmt.Sprintf("gcm gitlab login %s", profileName)))
+		ui.Print("  %s You can try again later: %s", ui.IconArrow, ui.Cyan(fmt.Sprintf("gcm connect %s --provider gitlab", profileName)))
 		return nil
 	}
 
 	p, _ := ctr.ProfileManager.Get(profileName)
 	if p != nil {
-		ok, transitionErr := applyProfileProviderTransition(ctx, profileName, p, def, user.Username, providerpkg.AuthMethodPAT, true, func() error {
+		ok, transitionErr := applyProfileProviderTransition(ctx, profileName, p, def, username, providerpkg.AuthMethodPAT, true, func() error {
 			return saveProviderToken(profileName, def, p, tokenSet)
 		})
 		if transitionErr != nil {
@@ -512,7 +504,7 @@ func runSetupGitLabAuthentication(ctx context.Context, profileName string, def p
 	if p != nil {
 		_ = ctr.ProfileManager.Update(p)
 	}
-	ui.Success("Authenticated with GitLab as @%s", user.Username)
+	ui.Success("Authenticated with GitLab as @%s", username)
 	activateAsGlobalIfFirst(profileName)
 	return nil
 }

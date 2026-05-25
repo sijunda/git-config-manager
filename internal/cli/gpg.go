@@ -254,13 +254,10 @@ Examples:
 			if err != nil || token.AccessToken == "" {
 				ui.Error("No %s token found for profile %q", def.DisplayName, profileName)
 				ui.Blank()
-				ui.Print("  Login first: gcm %s login %s", def.ID, profileName)
+				ui.Print("  Connect first: gcm connect %s --provider %s", profileName, def.ID)
 				return nil
 			}
 
-			if err := setProviderToken(def, token); err != nil {
-				return err
-			}
 			ctx := context.Background()
 
 			// Check for duplicates
@@ -268,7 +265,7 @@ Examples:
 				sp := ui.NewSpinner(fmt.Sprintf("Checking if GPG key already exists on %s...", def.DisplayName))
 				sp.Start()
 
-				exists, checkErr := providerGPGKeyExists(ctx, def, p.GPG.KeyID)
+				exists, checkErr := providerGPGKeyExists(ctx, def, token, p.GPG.KeyID)
 				if checkErr != nil {
 					sp.StopError("Could not check existing keys")
 					ui.Warning("Check failed: %v", checkErr)
@@ -292,7 +289,7 @@ Examples:
 			sp2 := ui.NewSpinner(fmt.Sprintf("Uploading GPG key to %s...", def.DisplayName))
 			sp2.Start()
 
-			if uploadErr := uploadProviderGPGKey(ctx, def, armoredKey); uploadErr != nil {
+			if uploadErr := uploadProviderGPGKey(ctx, def, token, armoredKey); uploadErr != nil {
 				sp2.StopError("Failed to upload GPG key")
 				ui.Warning("Upload failed: %v", uploadErr)
 				ui.Print("  You can upload manually at: %s", providerManualKeyURL(def, "gpg"))

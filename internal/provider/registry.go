@@ -8,6 +8,8 @@ import (
 	"git-config-manager/internal/config"
 )
 
+const defaultGitHubAPIURL = "https://api.github.com"
+
 // Definition is the runtime description of one configured provider.
 type Definition struct {
 	ID                ProviderID
@@ -41,10 +43,10 @@ func NewRegistry(cfg *config.Config) *Registry {
 		r.Register(definitionFromConfig(ProviderID(id), providerCfg))
 	}
 
-	// Backward compatibility: keep the legacy github block authoritative when
-	// present, because existing configs may not have a providers.github entry.
+	// Backward compatibility: keep a customized legacy github block authoritative
+	// when providers.github is still the default entry inherited from defaults.
 	githubDef := r.providers[GitHubID]
-	if cfg.GitHub.APIURL != "" {
+	if legacyGitHubConfigOverridesProvider(cfg) {
 		githubDef.ID = GitHubID
 		githubDef.Type = "github"
 		githubDef.DisplayName = "GitHub"
@@ -53,7 +55,7 @@ func NewRegistry(cfg *config.Config) *Registry {
 		githubDef.DefaultAuthMethod = AuthMethodPAT
 		githubDef.Scopes = append([]string(nil), cfg.GitHub.OAuth.Scopes...)
 		githubDef.Capabilities = GitHubCapabilities()
-		if cfg.GitHub.APIURL != "https://api.github.com" || githubDef.WebURL == "" {
+		if cfg.GitHub.APIURL != defaultGitHubAPIURL || githubDef.WebURL == "" {
 			githubDef.WebURL = githubWebURLFromAPI(cfg.GitHub.APIURL)
 			githubDef.GitHosts = []string{NormalizeHost(githubDef.WebURL)}
 			githubDef.SSHHost = NormalizeHost(githubDef.WebURL)
@@ -73,6 +75,19 @@ func NewRegistry(cfg *config.Config) *Registry {
 	}
 
 	return r
+}
+
+func legacyGitHubConfigOverridesProvider(cfg *config.Config) bool {
+	if cfg == nil || cfg.GitHub.APIURL == "" {
+		return false
+	}
+	providerCfg, hasProviderConfig := cfg.Providers[string(GitHubID)]
+	if !hasProviderConfig || providerCfg.APIURL == "" {
+		return true
+	}
+	legacyAPI := strings.TrimRight(cfg.GitHub.APIURL, "/")
+	providerAPI := strings.TrimRight(providerCfg.APIURL, "/")
+	return legacyAPI != defaultGitHubAPIURL && providerAPI == defaultGitHubAPIURL
 }
 
 // Register adds or replaces a provider definition.

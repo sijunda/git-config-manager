@@ -97,7 +97,7 @@ gpg --version
 
 ### OS Keychain (Optional — for token storage)
 
-GCM uses the OS keychain as the preferred GitHub token storage backend.
+GCM uses the OS keychain as the preferred provider token storage backend.
 
 | Platform | Keychain | Package |
 |----------|----------|---------|
@@ -154,9 +154,10 @@ GCM is **offline by default**. Network access is only needed for:
 
 | Feature | Endpoint | Port |
 |---------|----------|------|
-| `gcm github login` | `github.com` | 443 (HTTPS) |
-| `gcm github verify` | `api.github.com` | 443 (HTTPS) |
-| `gcm github user` | `api.github.com` | 443 (HTTPS) |
+| `gcm connect --provider github` | `api.github.com` or configured GitHub API | 443 (HTTPS) |
+| `gcm connect --provider gitlab` | `gitlab.com` or configured GitLab API | 443 (HTTPS) |
+| `gcm github verify/user` | `api.github.com` or configured GitHub API | 443 (HTTPS) |
+| `gcm gitlab verify/user` | `gitlab.com` or configured GitLab API | 443 (HTTPS) |
 | `gcm ssh test` | Target SSH host | 22 (SSH) |
 
 ### Proxy Support

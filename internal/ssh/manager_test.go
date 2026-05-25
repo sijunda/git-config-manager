@@ -1733,6 +1733,50 @@ func TestTestConnection_ExitZeroNoGreeting(t *testing.T) {
 	}
 }
 
+func TestTestConnectionToHost_DefaultHostPortAndGitLabGreeting(t *testing.T) {
+	dir := t.TempDir()
+	argsFile := filepath.Join(dir, "args.txt")
+	fakeSSH := filepath.Join(dir, "fake-ssh")
+	script := "#!/bin/sh\nprintf '%s\n' \"$*\" > \"" + argsFile + "\"\necho 'Welcome to GitLab, @test!'\nexit 1\n"
+	if err := os.WriteFile(fakeSSH, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake ssh: %v", err)
+	}
+
+	cfg := &config.Config{
+		SSHDir:   dir,
+		Advanced: config.AdvancedConfig{SSHCommand: fakeSSH},
+	}
+	m := NewManager(cfg, logger.New(logger.LevelError, os.Stderr))
+	if output, err := m.TestConnectionToHost(filepath.Join(dir, "somekey"), "", 0); err != nil || !strings.Contains(output, "Welcome to GitLab") {
+		t.Fatalf("default host connection = %q, %v", output, err)
+	}
+	args, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatalf("read args: %v", err)
+	}
+	if !strings.Contains(string(args), "git@github.com") {
+		t.Fatalf("default host args = %q", string(args))
+	}
+
+	if output, err := m.TestConnectionToHost(filepath.Join(dir, "somekey"), "gitlab.example.test", 2222); err != nil || !strings.Contains(output, "Welcome to GitLab") {
+		t.Fatalf("custom host connection = %q, %v", output, err)
+	}
+	args, err = os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatalf("read custom args: %v", err)
+	}
+	if !strings.Contains(string(args), "-p 2222") || !strings.Contains(string(args), "git@gitlab.example.test") {
+		t.Fatalf("custom host args = %q", string(args))
+	}
+}
+
+func TestTestConnectionToHost_InvalidHost(t *testing.T) {
+	m := newTestManager(t)
+	if _, err := m.TestConnectionToHost("/tmp/key", "bad host", 0); err == nil || !strings.Contains(err.Error(), "invalid SSH host") {
+		t.Fatalf("invalid host error = %v", err)
+	}
+}
+
 func TestAddToAgent_WithRealKey(t *testing.T) {
 	dir := t.TempDir()
 	cfg := &config.Config{

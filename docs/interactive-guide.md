@@ -142,7 +142,7 @@ Step 3/4: GPG Signing
 **When to say Yes:**
 - Your company requires verified commits
 - You contribute to security-sensitive open source projects
-- You want the green "Verified" badge on GitHub
+- You want a verified-commit badge on a supported Git host
 
 **When to say No (default):**
 - You're just getting started and don't need verification yet
@@ -155,23 +155,24 @@ Step 3/4: GPG Signing
 
 ---
 
-### Step 4/4: GitHub (Optional)
+### Step 4/4: Provider Account (Optional)
 
 ```
-Step 4/4: GitHub (Optional)
+Step 4/4: Provider Account (Optional)
 ───────────────────────────
-? GitHub username (leave empty to skip): 
+? Provider for this profile (current: none):
 ```
 
-#### "GitHub username"
+#### "Provider account"
 
-**What it is:** Your GitHub handle (e.g., `sijunda`, `octocat`). This is stored in the profile for reference and used by GitHub-related commands.
+**What it is:** The Git hosting provider account attached to this profile. A profile is scoped to exactly one provider.
 
 **What to enter:**
-- Your GitHub username (the one in `github.com/YOUR-USERNAME`)
-- Leave empty if you don't use GitHub with this identity, or want to set it up later
+- Choose GitHub, GitLab, or another configured provider
+- Enter the username for that provider account
+- Skip if you want to connect the provider later
 
-**This does NOT log you in.** To authenticate with a provider API (upload SSH keys, etc.), run `gcm connect <profile> --provider github` or the provider-specific login command.
+**This does NOT log you in.** To authenticate with a provider API (upload SSH keys, etc.), run `gcm connect <profile> --provider <id>` or a provider-specific login command.
 
 ---
 
@@ -296,9 +297,9 @@ Profile: work
 
 After enabling:
 - Every `git commit` is automatically signed
-- Commits show "Verified" on GitHub once the GPG key is uploaded
-- GCM auto-uploads the key during `gcm gpg generate` if a GitHub token is stored for the profile
-- Manual alternative: GitHub → Settings → SSH and GPG keys → New GPG key → paste output of `gpg --armor --export <KEY_ID>`
+- Commits can show a verified badge on supported Git hosts once the GPG key is uploaded
+- GCM auto-uploads the key during `gcm gpg generate` if a provider token is stored for the profile
+- Manual alternative: open your provider's GPG key settings and paste output of `gpg --armor --export <KEY_ID>`
 
 ---
 
@@ -452,8 +453,8 @@ Template creation wizard coming soon. For now, create templates by importing YAM
 |-------|--------------|------------|
 | `profile 'work' has no SSH key configured` | No SSH key is linked to this profile | `gcm ssh generate work` |
 | `profile 'work' has no GPG key` | No GPG key was generated for this profile | `gcm gpg generate work` |
-| `not authenticated - run: gcm github login work` | No GitHub token saved for this profile | `gcm github login work` |
-| `token invalid. Re-authenticate` | Your saved GitHub token expired or was revoked | `gcm github login work` |
+| `not authenticated` | No provider token saved for this profile | `gcm connect work --provider <github|gitlab>` |
+| `token invalid. Re-authenticate` | Your saved provider token expired or was revoked | `gcm connect work --provider <github|gitlab>` |
 | `GPG is not installed on your system` | The `gpg` command isn't available | Install GPG: `brew install gnupg` (macOS) or `apt install gnupg` (Linux) |
 | `Could not detect your shell` | GCM couldn't determine your shell from `$SHELL` | Set `SHELL` env var correctly: `SHELL=/bin/zsh gcm init` |
 

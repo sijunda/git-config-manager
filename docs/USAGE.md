@@ -383,12 +383,12 @@ gcm ssh generate work -p "correct-horse"   # passphrase (encrypted at rest)
 gcm ssh list             # keys across all profiles
 gcm ssh test work        # ssh -T git@github.com using the profile's key
 gcm ssh copy work        # copy public key to clipboard
-gcm ssh upload work      # upload key to GitHub (duplicate-safe)
+gcm ssh upload work      # upload key to the profile's provider (duplicate-safe)
 ```
 
 Keys are generated with Go's native crypto (no subprocess, no passphrase leaking into argv). Private keys are written `0600`, public keys `0644`. If a passphrase is provided, the private key is encrypted at rest using OpenSSH native format (bcrypt-KDF + AES-256-CTR); the passphrase itself is not stored anywhere.
 
-If a GitHub token is stored for the profile (via `gcm github login`), GCM will offer to upload the SSH key to GitHub automatically after generation.
+If a provider token is stored for the profile (via `gcm connect <profile> --provider <id>`), GCM will offer to upload the SSH key to that provider automatically after generation.
 
 Flags for `ssh generate`:
 
@@ -413,7 +413,7 @@ gcm gpg test work             # perform a test signature
 
 Inputs passed to `gpg` are validated: control characters and `%` are rejected to prevent injection into the batch-mode parameter file.
 
-If a GitHub token is stored for the profile, `gcm gpg generate` will offer to upload the GPG public key to GitHub automatically so commits appear as "Verified".
+If a provider token is stored for the profile, `gcm gpg generate` will offer to upload the GPG public key to that provider automatically. Verified badges appear on supported Git hosts.
 
 When signing is enabled, `gcm use <profile>` writes:
 
@@ -427,6 +427,13 @@ When signing is enabled, `gcm use <profile>` writes:
 ---
 
 ## 11. GitHub Integration
+
+For the provider-neutral login path, prefer:
+
+```bash
+gcm connect work --provider github
+gcm connect work --provider gitlab
+```
 
 GCM supports multiple GitHub authentication methods:
 

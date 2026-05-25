@@ -114,20 +114,18 @@ func cleanupProviderData(ctx context.Context, profileName string, p *profile.Pro
 	for _, def := range defs {
 		token, tokenErr := loadProviderToken(profileName, def, p)
 		if tokenErr == nil && token.AccessToken != "" {
-			if setErr := setProviderToken(def, token); setErr == nil {
-				if sshPubKey != "" && def.Capabilities.Has(providerpkg.CapabilitySSHKeys) {
-					if deleted, delErr := deleteProviderSSHKey(ctx, def, sshPubKey); delErr != nil {
-						ui.Warning("Could not delete SSH key from %s: %v", def.DisplayName, delErr)
-					} else if deleted {
-						ui.Success("SSH key removed from %s", def.DisplayName)
-					}
+			if sshPubKey != "" && def.Capabilities.Has(providerpkg.CapabilitySSHKeys) {
+				if deleted, delErr := deleteProviderSSHKey(ctx, def, token, sshPubKey); delErr != nil {
+					ui.Warning("Could not delete SSH key from %s: %v", def.DisplayName, delErr)
+				} else if deleted {
+					ui.Success("SSH key removed from %s", def.DisplayName)
 				}
-				if p.GPG != nil && p.GPG.KeyID != "" && def.Capabilities.Has(providerpkg.CapabilityGPGKeys) {
-					if deleted, delErr := deleteProviderGPGKey(ctx, def, p.GPG.KeyID); delErr != nil {
-						ui.Warning("Could not delete GPG key from %s: %v", def.DisplayName, delErr)
-					} else if deleted {
-						ui.Success("GPG key removed from %s", def.DisplayName)
-					}
+			}
+			if p.GPG != nil && p.GPG.KeyID != "" && def.Capabilities.Has(providerpkg.CapabilityGPGKeys) {
+				if deleted, delErr := deleteProviderGPGKey(ctx, def, token, p.GPG.KeyID); delErr != nil {
+					ui.Warning("Could not delete GPG key from %s: %v", def.DisplayName, delErr)
+				} else if deleted {
+					ui.Success("GPG key removed from %s", def.DisplayName)
 				}
 			}
 		}
@@ -165,6 +163,14 @@ func cloneProfileProviderState(p *profile.Profile) *profile.Profile {
 		githubConfig := *p.GitHub
 		clone.GitHub = &githubConfig
 	}
+	if p.SSH != nil {
+		sshConfig := *p.SSH
+		clone.SSH = &sshConfig
+	}
+	if p.GPG != nil {
+		gpgConfig := *p.GPG
+		clone.GPG = &gpgConfig
+	}
 	return &clone
 }
 
@@ -172,8 +178,11 @@ func restoreProfileProviderState(p *profile.Profile, snapshot *profile.Profile) 
 	if p == nil || snapshot == nil {
 		return
 	}
-	p.Providers = snapshot.Providers
-	p.GitHub = snapshot.GitHub
+	restored := cloneProfileProviderState(snapshot)
+	p.Providers = restored.Providers
+	p.GitHub = restored.GitHub
+	p.SSH = restored.SSH
+	p.GPG = restored.GPG
 }
 
 func providerNames(defs []providerpkg.Definition) string {
@@ -314,7 +323,7 @@ func requireProfileProvider(profileName string, p *profile.Profile, def provider
 		return fmt.Errorf("profile %q has multiple providers configured; choose exactly one with: gcm profile edit %s -i", profileName, profileName)
 	}
 	if !profileUsesProvider(p, def.ID) {
-		return fmt.Errorf("profile %q is not configured for %s; run: gcm %s login %s", profileName, def.DisplayName, def.ID, profileName)
+		return fmt.Errorf("profile %q is not configured for %s; run: gcm connect %s --provider %s", profileName, def.DisplayName, profileName, def.ID)
 	}
 	return nil
 }
@@ -381,11 +390,7 @@ func setupSSHKeyUploadForProvider(ctx context.Context, profileName string, p *pr
 	if err != nil || token.AccessToken == "" {
 		return false
 	}
-	if err := setProviderToken(def, token); err != nil {
-		return false
-	}
-
-	exists, checkErr := providerSSHKeyExists(ctx, def, publicKey)
+	exists, checkErr := providerSSHKeyExists(ctx, def, token, publicKey)
 	if checkErr == nil && exists {
 		ui.Blank()
 		ui.Success("SSH key already on %s", def.DisplayName)
@@ -401,7 +406,7 @@ func setupSSHKeyUploadForProvider(ctx context.Context, profileName string, p *pr
 		return false
 	}
 	title := providerResourceName(profileName, def, "ssh", keyType)
-	if uploadErr := uploadProviderSSHKey(ctx, def, title, publicKey); uploadErr != nil {
+	if uploadErr := uploadProviderSSHKey(ctx, def, token, title, publicKey); uploadErr != nil {
 		ui.Warning("Could not upload SSH key to %s: %v", def.DisplayName, uploadErr)
 		return false
 	}
@@ -418,11 +423,7 @@ func setupGPGKeyUploadForProvider(ctx context.Context, profileName string, p *pr
 	if err != nil || token.AccessToken == "" {
 		return false
 	}
-	if err := setProviderToken(def, token); err != nil {
-		return false
-	}
-
-	exists, checkErr := providerGPGKeyExists(ctx, def, keyID)
+	exists, checkErr := providerGPGKeyExists(ctx, def, token, keyID)
 	if checkErr == nil && exists {
 		ui.Success("GPG key already on %s", def.DisplayName)
 		return false
@@ -440,7 +441,7 @@ func setupGPGKeyUploadForProvider(ctx context.Context, profileName string, p *pr
 		ui.Warning("Could not read GPG public key: %v", gpgErr)
 		return false
 	}
-	if uploadErr := uploadProviderGPGKey(ctx, def, pubKey); uploadErr != nil {
+	if uploadErr := uploadProviderGPGKey(ctx, def, token, pubKey); uploadErr != nil {
 		ui.Warning("Could not upload GPG key to %s: %v", def.DisplayName, uploadErr)
 		return false
 	}
@@ -460,32 +461,28 @@ func authenticatedProvidersForProfile(profileName string, p *profile.Profile, ca
 	return []providerpkg.Definition{def}
 }
 
-func setProviderToken(def providerpkg.Definition, token providerpkg.TokenSet) error {
-	return ctr.ProviderClient.SetToken(def, token)
+func providerSSHKeyExists(ctx context.Context, def providerpkg.Definition, token providerpkg.TokenSet, publicKey string) (bool, error) {
+	return ctr.ProviderClient.SSHKeyExists(ctx, def, token, publicKey)
 }
 
-func providerSSHKeyExists(ctx context.Context, def providerpkg.Definition, publicKey string) (bool, error) {
-	return ctr.ProviderClient.SSHKeyExists(ctx, def, publicKey)
+func uploadProviderSSHKey(ctx context.Context, def providerpkg.Definition, token providerpkg.TokenSet, title, publicKey string) error {
+	return ctr.ProviderClient.UploadSSHKey(ctx, def, token, title, publicKey)
 }
 
-func uploadProviderSSHKey(ctx context.Context, def providerpkg.Definition, title, publicKey string) error {
-	return ctr.ProviderClient.UploadSSHKey(ctx, def, title, publicKey)
+func deleteProviderSSHKey(ctx context.Context, def providerpkg.Definition, token providerpkg.TokenSet, publicKey string) (bool, error) {
+	return ctr.ProviderClient.DeleteSSHKey(ctx, def, token, publicKey)
 }
 
-func deleteProviderSSHKey(ctx context.Context, def providerpkg.Definition, publicKey string) (bool, error) {
-	return ctr.ProviderClient.DeleteSSHKey(ctx, def, publicKey)
+func providerGPGKeyExists(ctx context.Context, def providerpkg.Definition, token providerpkg.TokenSet, keyID string) (bool, error) {
+	return ctr.ProviderClient.GPGKeyExists(ctx, def, token, keyID)
 }
 
-func providerGPGKeyExists(ctx context.Context, def providerpkg.Definition, keyID string) (bool, error) {
-	return ctr.ProviderClient.GPGKeyExists(ctx, def, keyID)
+func uploadProviderGPGKey(ctx context.Context, def providerpkg.Definition, token providerpkg.TokenSet, armoredKey string) error {
+	return ctr.ProviderClient.UploadGPGKey(ctx, def, token, armoredKey)
 }
 
-func uploadProviderGPGKey(ctx context.Context, def providerpkg.Definition, armoredKey string) error {
-	return ctr.ProviderClient.UploadGPGKey(ctx, def, armoredKey)
-}
-
-func deleteProviderGPGKey(ctx context.Context, def providerpkg.Definition, keyID string) (bool, error) {
-	return ctr.ProviderClient.DeleteGPGKey(ctx, def, keyID)
+func deleteProviderGPGKey(ctx context.Context, def providerpkg.Definition, token providerpkg.TokenSet, keyID string) (bool, error) {
+	return ctr.ProviderClient.DeleteGPGKey(ctx, def, token, keyID)
 }
 
 func providerResourceName(profileName string, def providerpkg.Definition, parts ...string) string {

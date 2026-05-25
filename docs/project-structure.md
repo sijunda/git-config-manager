@@ -15,14 +15,18 @@ git-config-manager/
 │   ├── cli/                   # Cobra CLI commands
 │   ├── config/                # Configuration management
 │   ├── container/             # Dependency injection
-│   ├── github/                # GitHub API + token storage
+│   ├── github/                # GitHub API client
+│   ├── gitlab/                # GitLab API client
 │   ├── gpg/                   # GPG key management
 │   ├── profile/               # Profile CRUD + switching
+│   ├── provider/              # Provider definitions, capabilities, registry
+│   ├── providerclient/        # Provider-neutral API operation router
 │   ├── service/
 │   │   ├── crypto/            # AES-256-GCM encryption
 │   │   └── file/              # File operations
 │   ├── shell/                 # Shell integration
 │   ├── ssh/                   # SSH key management
+│   ├── tokenstore/            # Provider-aware token persistence
 │   └── template/              # Configuration templates
 ├── pkg/                       # Public shared libraries
 │   ├── logger/                # Structured logging

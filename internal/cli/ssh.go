@@ -286,7 +286,7 @@ Examples:
 			if err != nil || token.AccessToken == "" {
 				ui.Error("No %s token found for profile %q", def.DisplayName, profileName)
 				ui.Blank()
-				ui.Print("  Login first: gcm %s login %s", def.ID, profileName)
+				ui.Print("  Connect first: gcm connect %s --provider %s", profileName, def.ID)
 				return nil
 			}
 
@@ -295,9 +295,6 @@ Examples:
 				return fmt.Errorf("could not read public key: %w", err)
 			}
 
-			if err := setProviderToken(def, token); err != nil {
-				return err
-			}
 			ctx := context.Background()
 
 			// Check for duplicates
@@ -305,7 +302,7 @@ Examples:
 				sp := ui.NewSpinner(fmt.Sprintf("Checking if key already exists on %s...", def.DisplayName))
 				sp.Start()
 
-				exists, checkErr := providerSSHKeyExists(ctx, def, pubKey)
+				exists, checkErr := providerSSHKeyExists(ctx, def, token, pubKey)
 				if checkErr != nil {
 					sp.StopError("Could not check existing keys")
 					ui.Warning("Check failed: %v", checkErr)
@@ -324,7 +321,7 @@ Examples:
 			sp2.Start()
 
 			title := providerResourceName(profileName, def, "ssh", string(p.SSH.KeyType))
-			if uploadErr := uploadProviderSSHKey(ctx, def, title, pubKey); uploadErr != nil {
+			if uploadErr := uploadProviderSSHKey(ctx, def, token, title, pubKey); uploadErr != nil {
 				sp2.StopError("Failed to upload SSH key")
 				ui.Warning("Upload failed: %v", uploadErr)
 				ui.Print("  You can upload manually at: %s", providerManualKeyURL(def, "ssh"))

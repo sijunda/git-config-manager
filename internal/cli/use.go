@@ -161,7 +161,7 @@ func verifyProviderTokenOnUse(ctx context.Context, profileName string, def provi
 	if err != nil {
 		ui.Blank()
 		ui.Warning("%s token for %q may be expired or invalid", def.DisplayName, profileName)
-		ui.Print("  %s Re-authenticate: %s", ui.IconArrow, ui.Cyan(fmt.Sprintf("gcm %s login %s", def.ID, profileName)))
+		ui.Print("  %s Re-authenticate: %s", ui.IconArrow, ui.Cyan(fmt.Sprintf("gcm connect %s --provider %s", profileName, def.ID)))
 	}
 }
 

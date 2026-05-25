@@ -55,8 +55,16 @@ func New(cfg *config.Config, log *logger.Logger) *Container {
 	auditLog := audit.NewLogger(cfg)
 
 	tokenStore := tokenstore.NewTokenStore(cfg, crypto, log, nil)
-	ghClient := github.NewClient(cfg, log, tokenStore)
 	registry := providerpkg.NewRegistry(cfg)
+	githubClientCfg := *cfg
+	if githubDef, ok := registry.Get(providerpkg.GitHubID); ok && githubDef.APIURL != "" {
+		githubClientCfg.GitHub.APIURL = githubDef.APIURL
+		githubClientCfg.GitHub.UploadKeys = githubDef.UploadKeys
+		if len(githubDef.Scopes) > 0 {
+			githubClientCfg.GitHub.OAuth.Scopes = append([]string(nil), githubDef.Scopes...)
+		}
+	}
+	ghClient := github.NewClient(&githubClientCfg, log, tokenStore)
 	gitlabCfg := cfg.Providers["gitlab"]
 	if gitlabCfg.APIURL == "" {
 		gitlabCfg = config.ProviderConfig{

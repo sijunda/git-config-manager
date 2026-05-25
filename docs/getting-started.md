@@ -47,7 +47,7 @@ The wizard walks you through four steps:
 1. **Basic Info** — Name and email for Git commits, default editor
 2. **SSH Key** — Optionally generate a new SSH key (Ed25519 by default)
 3. **GPG Signing** — Optionally generate a GPG key and enable commit signing
-4. **GitHub** — Link your GitHub username
+4. **Provider Account** — Link one provider account for this profile
 
 > **Not sure what a prompt means?** See the [Interactive Guide](interactive-guide.md) for a plain-English explanation of every question, term, and option in the wizard.
 
@@ -106,7 +106,7 @@ gcm validate work      # Validate a specific profile
 | Task | Command | Guide |
 | ---- | ------- | ----- |
 | Generate an SSH key | `gcm ssh generate work` | [usage.md — SSH](usage.md#9-ssh-key-management) |
-| Log in to GitHub | `gcm github login work` | [usage.md — GitHub](usage.md#11-github-integration) |
+| Connect a provider | `gcm connect work --provider github` | [usage.md — GitHub](usage.md#11-github-integration) |
 | Enable GPG signing | `gcm gpg generate work` | [usage.md — GPG](usage.md#10-gpg-commit-signing) |
 | Create team templates | `gcm template import tpl.yaml` | [usage.md — Templates](usage.md#12-templates) |
 | Back up your config | `gcm backup create` | [usage.md — Backup](usage.md#13-backup--restore) |

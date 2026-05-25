@@ -570,12 +570,8 @@ func newProfileDeleteCmd() *cobra.Command {
 				if tokenErr != nil || token.AccessToken == "" {
 					continue
 				}
-				if setErr := setProviderToken(def, token); setErr != nil {
-					continue
-				}
-
 				if sshPubKey != "" && def.Capabilities.Has(providerpkg.CapabilitySSHKeys) {
-					deleted, delErr := deleteProviderSSHKey(ctx, def, sshPubKey)
+					deleted, delErr := deleteProviderSSHKey(ctx, def, token, sshPubKey)
 					if delErr != nil {
 						ui.Warning("Could not delete SSH key from %s: %v", def.DisplayName, delErr)
 					} else if deleted {
@@ -584,7 +580,7 @@ func newProfileDeleteCmd() *cobra.Command {
 				}
 
 				if p.GPG != nil && p.GPG.KeyID != "" && def.Capabilities.Has(providerpkg.CapabilityGPGKeys) {
-					deleted, delErr := deleteProviderGPGKey(ctx, def, p.GPG.KeyID)
+					deleted, delErr := deleteProviderGPGKey(ctx, def, token, p.GPG.KeyID)
 					if delErr != nil {
 						ui.Warning("Could not delete GPG key from %s: %v", def.DisplayName, delErr)
 					} else if deleted {

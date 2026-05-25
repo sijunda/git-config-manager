@@ -91,3 +91,43 @@ func TestSetMasterPasswordPrompt(t *testing.T) {
 		return "secret", nil
 	})
 }
+
+func TestNewUsesDefaultGitLabConfigWhenMissing(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+
+	cfg := config.DefaultConfig()
+	cfg.ProfilesDir = tmp + "/profiles"
+	cfg.TemplatesDir = tmp + "/templates"
+	cfg.CacheDir = tmp + "/cache"
+	cfg.SSHDir = tmp + "/ssh"
+	cfg.GPGHome = tmp + "/gpg"
+	delete(cfg.Providers, "gitlab")
+
+	ctr := New(cfg, logger.New(logger.LevelError, os.Stderr))
+	if ctr.GitLabClient == nil {
+		t.Fatal("GitLab client should be initialized from default config")
+	}
+	if ctr.ProviderClient == nil {
+		t.Fatal("provider client router should be initialized")
+	}
+}
+
+func TestNewAllowsMissingGitHubProviderDefinition(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+
+	cfg := config.DefaultConfig()
+	cfg.ProfilesDir = tmp + "/profiles"
+	cfg.TemplatesDir = tmp + "/templates"
+	cfg.CacheDir = tmp + "/cache"
+	cfg.SSHDir = tmp + "/ssh"
+	cfg.GPGHome = tmp + "/gpg"
+	cfg.GitHub.APIURL = ""
+	delete(cfg.Providers, "github")
+
+	ctr := New(cfg, logger.New(logger.LevelError, os.Stderr))
+	if ctr.GitHubClient == nil || ctr.ProviderRegistry == nil {
+		t.Fatal("container should still initialize without a GitHub provider definition")
+	}
+}

@@ -234,6 +234,8 @@ Shell hook generation uses a strategy per shell type (Bash, Zsh, Fish, PowerShel
 
 Provider integrations use a capability-based strategy. The registry resolves a Git credential host to a provider definition; CLI flows then call only the capabilities they need, such as PAT auth, credential helper support, SSH keys, or GPG keys. This keeps future Bitbucket support from requiring another CLI-wide rewrite.
 
+Provider API calls go through `internal/providerclient.Router`. The router receives the provider definition and the token for each operation, so upload/delete/verify calls are token-scoped instead of relying on shared mutable client state. `providers.github` is the modern source of GitHub provider configuration; a customized legacy `github:` block is still honored when the provider entry is only the inherited default.
+
 Provider-aware token APIs live in `internal/tokenstore`, not in any provider package. Provider clients receive tokens from the CLI/application flow and do not own persistence.
 
 ### Template Method
